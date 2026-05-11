@@ -1,0 +1,639 @@
+script_author("Victor Strand")
+script_name("BannerManager")
+script_description("Banner overlay manager")
+script_version("1.2")
+
+local encoding = require 'encoding'
+encoding.default = 'CP1251'
+local u8 = encoding.UTF8
+
+local ffi     = require 'ffi'
+local jsoncfg = require 'jsoncfg'
+local imgui   = require 'mimgui'
+
+local cfgFile = "BannerManager.json"
+local cfg = jsoncfg.load({ watermarks = {} }, cfgFile)
+
+local watermarksDir = getWorkingDirectory() .. "/config/watermarks"
+if not doesDirectoryExist(getWorkingDirectory() .. "/config") then
+  createDirectory(getWorkingDirectory() .. "/config")
+end
+if not doesDirectoryExist(watermarksDir) then
+  createDirectory(watermarksDir)
+end
+
+local MDS = MONET_DPI_SCALE
+local sx, sy = getScreenResolution()
+
+local window           = imgui.new.bool(false)
+local urlInput         = imgui.new.char[256]()
+local downloadProgress = {}
+local currentWaterMark = nil
+
+-- буфер для редактирования имени
+local renameMode = false
+local renameBuf  = imgui.new.char[128]()
+
+local function iv4(r,g,b,a) return imgui.ImVec4(r,g,b,a) end
+local function iv2(x,y)     return imgui.ImVec2(x,y) end
+
+-- ─── WaterMark class ───────────────────────────────────────────────────────
+local WaterMarkM = {}
+local DEFAULT_W = 200
+local DEFAULT_H = 200
+
+function WaterMarkM.new(data)
+  local w  = data.w  or (data.size     and data.size[1])     or DEFAULT_W * MDS
+  local h  = data.h  or (data.size     and data.size[2])     or DEFAULT_H * MDS
+  local px = data.px or (data.position and data.position[1]) or (sx/2 - DEFAULT_W*MDS/2)
+  local py = data.py or (data.position and data.position[2]) or (sy/2 - DEFAULT_H*MDS/2)
+
+  local self = {
+    path    = data.path,
+    label   = data.label or basename(data.path),
+    w       = w,  h  = h,
+    px      = px, py = py,
+    opacity = imgui.new.float(data.opacity or 1.0),
+    visible = imgui.new.bool(data.visible == nil and true or data.visible),
+    movable = imgui.new.bool(data.movable == true),
+    texture = data.texture,
+    slW     = imgui.new.int(math.floor(w)),
+    slH     = imgui.new.int(math.floor(h)),
+    slX     = imgui.new.int(math.floor(px)),
+    slY     = imgui.new.int(math.floor(py)),
+  }
+  setmetatable(self, { __index = WaterMarkM })
+  return self
+end
+
+function WaterMarkM:syncSliders()
+  self.slW[0] = math.floor(self.w)
+  self.slH[0] = math.floor(self.h)
+  self.slX[0] = math.floor(self.px)
+  self.slY[0] = math.floor(self.py)
+end
+
+function WaterMarkM:applySliders()
+  self.w  = self.slW[0]
+  self.h  = self.slH[0]
+  self.px = self.slX[0]
+  self.py = self.slY[0]
+end
+
+function WaterMarkM:decode()
+  return {
+    path    = self.path,
+    label   = self.label,
+    w       = self.w,  h  = self.h,
+    px      = self.px, py = self.py,
+    opacity = self.opacity[0],
+    visible = self.visible[0],
+    movable = self.movable[0],
+  }
+end
+
+-- ─── Загрузка сохранённых ватермарков ─────────────────────────────────────
+local WaterMarks = {}
+for _, data in ipairs(cfg.watermarks) do
+  table.insert(WaterMarks, WaterMarkM.new(data))
+end
+
+-- ─── Тема ─────────────────────────────────────────────────────────────────
+imgui.OnInitialize(function()
+  imgui.GetIO().IniFilename = nil
+  local s = imgui.GetStyle()
+  s:ScaleAllSizes(MDS)
+
+  s.WindowRounding    = 8  * MDS
+  s.FrameRounding     = 5  * MDS
+  s.GrabRounding      = 4  * MDS
+  s.PopupRounding     = 6  * MDS
+  s.ScrollbarRounding = 4  * MDS
+  s.WindowPadding     = iv2(10*MDS, 8*MDS)
+  s.FramePadding      = iv2(6*MDS,  3*MDS)
+  s.ItemSpacing       = iv2(6*MDS,  5*MDS)
+  s.ScrollbarSize     = 7  * MDS
+  s.GrabMinSize       = 7  * MDS
+  s.WindowBorderSize  = 1
+  s.FrameBorderSize   = 0
+
+  local c = s.Colors
+  local C = imgui.Col
+  c[C.WindowBg]            = iv4(0.10,0.10,0.13,0.97)
+  c[C.ChildBg]             = iv4(0.07,0.07,0.10,1.00)
+  c[C.Border]              = iv4(1,1,1,0.07)
+  c[C.Separator]           = iv4(1,1,1,0.09)
+  c[C.Text]                = iv4(0.92,0.92,0.95,1.00)
+  c[C.TextDisabled]        = iv4(0.45,0.45,0.50,1.00)
+  c[C.TitleBg]             = iv4(0.07,0.07,0.10,1.00)
+  c[C.TitleBgActive]       = iv4(0.07,0.07,0.10,1.00)
+  c[C.TitleBgCollapsed]    = iv4(0.07,0.07,0.10,1.00)
+  c[C.FrameBg]             = iv4(0.18,0.18,0.24,1.00)
+  c[C.FrameBgHovered]      = iv4(0.22,0.22,0.30,1.00)
+  c[C.FrameBgActive]       = iv4(0.26,0.26,0.34,1.00)
+  c[C.Button]              = iv4(0.15,0.45,0.55,1.00)
+  c[C.ButtonHovered]       = iv4(0.20,0.55,0.68,1.00)
+  c[C.ButtonActive]        = iv4(0.10,0.35,0.45,1.00)
+  c[C.SliderGrab]          = iv4(0.20,0.55,0.68,1.00)
+  c[C.SliderGrabActive]    = iv4(0.25,0.65,0.80,1.00)
+  c[C.CheckMark]           = iv4(0.20,0.75,0.85,1.00)
+  c[C.ScrollbarBg]         = iv4(0.08,0.08,0.11,1.00)
+  c[C.ScrollbarGrab]       = iv4(0.22,0.22,0.28,1.00)
+  c[C.ScrollbarGrabHovered]= iv4(0.28,0.28,0.36,1.00)
+  c[C.ScrollbarGrabActive] = iv4(0.35,0.35,0.45,1.00)
+  c[C.Header]              = iv4(0.15,0.45,0.55,0.60)
+  c[C.HeaderHovered]       = iv4(0.20,0.55,0.68,0.80)
+  c[C.HeaderActive]        = iv4(0.10,0.35,0.45,1.00)
+
+  for _, wm in ipairs(WaterMarks) do
+    wm.texture = imgui.CreateTextureFromFile(wm.path)
+  end
+end)
+
+-- ─── Сохранение ───────────────────────────────────────────────────────────
+local function saveAll()
+  cfg.watermarks = {}
+  for i, wm in ipairs(WaterMarks) do
+    cfg.watermarks[i] = wm:decode()
+  end
+  jsoncfg.save(cfg, cfgFile)
+end
+
+-- ─── Открыть ссылку в браузере ────────────────────────────────────────────
+local _gta = nil
+local function openLink(url)
+  if not _gta then
+    _gta = ffi.load('GTASA')
+    pcall(function()
+      ffi.cdef[[ void _Z12AND_OpenLinkPKc(const char* link); ]]
+    end)
+  end
+  pcall(_gta._Z12AND_OpenLinkPKc, url)
+end
+
+-- ─── Главное меню ─────────────────────────────────────────────────────────
+imgui.OnFrame(
+  function() return window[0] end,
+  function(self)
+    self.HideCursor = false
+
+    local WW = 275 * MDS
+    local WH = 260 * MDS
+
+    imgui.SetNextWindowSize(iv2(WW, WH), imgui.Cond.Always)
+    imgui.SetNextWindowPos(iv2(sx/2, sy/2), imgui.Cond.FirstUseEver, iv2(0.5, 0.5))
+
+    local winFlags = imgui.WindowFlags.NoResize
+                   + imgui.WindowFlags.NoScrollbar
+                   + imgui.WindowFlags.NoScrollWithMouse
+
+    imgui.Begin(u8('BannerManager'), window, winFlags)
+
+    local avail = imgui.GetContentRegionAvail().x
+    local sp    = imgui.GetStyle().ItemSpacing.x
+
+    -- ── список ватермарков ──
+    local itemH = 20 * MDS
+    local rows  = math.min(math.max(#WaterMarks, 1), 3)
+    local listH = rows * (itemH + imgui.GetStyle().ItemSpacing.y)
+
+    imgui.PushStyleColor(imgui.Col.ChildBg, iv4(0.07,0.07,0.10,1))
+    imgui.BeginChild("##list", iv2(avail, listH), false)
+
+    if #WaterMarks == 0 then
+      imgui.TextDisabled(u8('\xd1\xef\xe8\xf1\xee\xea \xef\xf3\xf1\xf2'))
+    end
+
+    for i, wm in ipairs(WaterMarks) do
+      local sel = (currentWaterMark == i)
+
+      imgui.PushStyleColor(imgui.Col.Button,        iv4(0,0,0,0))
+      imgui.PushStyleColor(imgui.Col.ButtonHovered, iv4(1,1,1,0.10))
+      imgui.PushStyleColor(imgui.Col.ButtonActive,  iv4(1,1,1,0.20))
+      local eyeTxt = wm.visible[0] and u8('\xe2\xe8\xe4') or u8('\xf1\xea\xf0')
+      if imgui.Button(eyeTxt .. "##eye" .. i, iv2(28*MDS, itemH)) then
+        wm.visible[0] = not wm.visible[0]
+      end
+      imgui.PopStyleColor(3)
+      imgui.SameLine(0, 3*MDS)
+
+      local selW = avail - 28*MDS - 3*MDS
+      if sel then
+        imgui.PushStyleColor(imgui.Col.Header,        iv4(0.15,0.45,0.55,0.90))
+        imgui.PushStyleColor(imgui.Col.HeaderHovered, iv4(0.15,0.45,0.55,0.90))
+        imgui.PushStyleColor(imgui.Col.HeaderActive,  iv4(0.15,0.45,0.55,0.90))
+      end
+      local selState = imgui.new.bool(sel)
+      local clicked = imgui.SelectableBoolPtr(
+        wm.label .. "##s" .. i,
+        selState, 0, iv2(selW, itemH)
+      )
+      if sel then imgui.PopStyleColor(3) end
+
+      if clicked then
+        if currentWaterMark == i then
+          currentWaterMark = nil
+          renameMode = false
+        else
+          currentWaterMark = i
+          renameMode = false
+          wm:syncSliders()
+        end
+      end
+    end
+
+    imgui.EndChild()
+    imgui.PopStyleColor(1)
+
+    imgui.Separator()
+
+    local wm = WaterMarks[currentWaterMark]
+    if wm then
+      -- ── панель редактирования ──
+      local hw = (avail - sp) * 0.5
+
+      -- строка с именем + кнопка "ред."
+      if renameMode then
+        imgui.SetNextItemWidth(avail - 50*MDS - sp)
+        imgui.InputText("##rename", renameBuf, 128)
+        imgui.SameLine(0, 3*MDS)
+        imgui.PushStyleColor(imgui.Col.Button,        iv4(0.15,0.55,0.30,1))
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, iv4(0.20,0.68,0.40,1))
+        imgui.PushStyleColor(imgui.Col.ButtonActive,  iv4(0.10,0.40,0.20,1))
+        if imgui.Button(u8('\xce\xca##rn'), iv2(47*MDS, itemH)) then
+          local newLabel = ffi.string(renameBuf)
+          if #newLabel > 0 then
+            wm.label = newLabel
+            saveAll()
+          end
+          renameMode = false
+        end
+        imgui.PopStyleColor(3)
+      else
+        imgui.PushStyleColor(imgui.Col.Text, iv4(0.75,0.85,0.95,1))
+        imgui.Text(wm.label)
+        imgui.PopStyleColor(1)
+        imgui.SameLine(0, 6*MDS)
+        imgui.PushStyleColor(imgui.Col.Button,        iv4(0.20,0.30,0.50,1))
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, iv4(0.28,0.40,0.65,1))
+        imgui.PushStyleColor(imgui.Col.ButtonActive,  iv4(0.14,0.22,0.38,1))
+        if imgui.Button(u8('\xf0\xe5\xe4.##ren'), iv2(34*MDS, itemH)) then
+          renameMode = true
+          imgui.StrCopy(renameBuf, wm.label, 128)
+        end
+        imgui.PopStyleColor(3)
+      end
+
+      imgui.Spacing()
+
+      -- размер
+      imgui.SetNextItemWidth(hw)
+      if imgui.SliderInt("##W", wm.slW, 10, math.floor(sx), "W:%d") then wm:applySliders() end
+      imgui.SameLine()
+      imgui.SetNextItemWidth(hw)
+      if imgui.SliderInt("##H", wm.slH, 10, math.floor(sy), "H:%d") then wm:applySliders() end
+
+      -- позиция
+      imgui.SetNextItemWidth(hw)
+      if imgui.SliderInt("##X", wm.slX, 0, math.floor(sx), "X:%d") then wm:applySliders() end
+      imgui.SameLine()
+      imgui.SetNextItemWidth(hw)
+      if imgui.SliderInt("##Y", wm.slY, 0, math.floor(sy), "Y:%d") then wm:applySliders() end
+
+      imgui.SetNextItemWidth(hw)
+      imgui.SliderFloat("##op", wm.opacity, 0.0, 1.0, u8('\xcd\xe5\xef\xf0.%.2f'))
+      imgui.SameLine()
+      imgui.Checkbox(u8('\xcf\xe5\xf0\xe5\xec.'), wm.movable)
+
+      imgui.Separator()
+
+      local bw = (avail - sp) * 0.5
+      if imgui.Button(u8('\xd1\xee\xf5\xf0.'), iv2(bw, 22*MDS)) then
+        wm:applySliders()
+        saveAll()
+      end
+      imgui.SameLine()
+      imgui.PushStyleColor(imgui.Col.Button,        iv4(0.55,0.15,0.15,1))
+      imgui.PushStyleColor(imgui.Col.ButtonHovered, iv4(0.70,0.20,0.20,1))
+      imgui.PushStyleColor(imgui.Col.ButtonActive,  iv4(0.40,0.10,0.10,1))
+      if imgui.Button(u8('\xd3\xe4\xe0\xeb.'), iv2(bw, 22*MDS)) then
+        table.remove(WaterMarks, currentWaterMark)
+        currentWaterMark = nil
+        renameMode = false
+        saveAll()
+      end
+      imgui.PopStyleColor(3)
+
+    else
+      -- ── ввод URL ──
+      imgui.SetNextItemWidth(avail)
+      imgui.InputTextWithHint("##url", "https://...png / jpg", urlInput, 256)
+
+      local urlStr  = ffi.string(urlInput)
+      local valid   = urlStr:match("^https?://[%w%-%_%.%?%.:/%%+=&]+$") ~= nil
+      local busy    = downloadProgress.pos ~= nil
+      local disabled = not valid or busy
+
+      if disabled then
+        imgui.PushStyleColor(imgui.Col.Button,        iv4(0.3,0.3,0.3,1))
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, iv4(0.3,0.3,0.3,1))
+        imgui.PushStyleColor(imgui.Col.ButtonActive,  iv4(0.3,0.3,0.3,1))
+      end
+      local btnClick = imgui.Button(u8('\xc7\xe0\xe3\xf0\xf3\xe7\xe8\xf2\xfc'), iv2(avail, 22*MDS))
+      if disabled then imgui.PopStyleColor(3) end
+
+      if btnClick and not disabled then
+        downloadProgress = { pos = 0, total = 0 }
+        local file = urlStr:match("([^/]+)$") or (generateUniqueFileName(10) .. ".png")
+        file = file:match("^([^%?]+)") or file
+        local path = watermarksDir .. "/" .. file
+        downloadToFile(urlStr, path, function(evType, pos, total_size)
+          if evType == "downloading" then
+            downloadProgress.pos   = pos
+            downloadProgress.total = total_size or 0
+          elseif evType == "finished" then
+            downloadProgress = {}
+            local w2, h2 = get_image_size(path)
+            if not w2 then
+              downloadProgress = { error = u8('\xce\xf8\xe8\xe1\xea\xe0 \xf4\xee\xf0\xec\xe0\xf2\xe0') }
+              return
+            end
+            local newWm = WaterMarkM.new({
+              path    = path,
+              w       = DEFAULT_W * MDS,
+              h       = DEFAULT_H * MDS,
+              px      = sx/2 - DEFAULT_W*MDS/2,
+              py      = sy/2 - DEFAULT_H*MDS/2,
+              opacity = 1.0,
+              visible = true,
+              texture = imgui.CreateTextureFromFile(path),
+            })
+            table.insert(WaterMarks, newWm)
+            saveAll()
+            currentWaterMark = #WaterMarks
+            newWm:syncSliders()
+          elseif evType == "error" then
+            downloadProgress = { error = tostring(pos) }
+          end
+        end)
+      end
+
+      if downloadProgress.error then
+        imgui.TextDisabled(u8('\xce\xf8\xe8\xe1\xea\xe0: ') .. tostring(downloadProgress.error))
+      elseif downloadProgress.pos then
+        local kb  = math.floor((downloadProgress.pos   or 0) / 1024)
+        local tkb = math.floor((downloadProgress.total or 0) / 1024)
+        imgui.TextDisabled(u8('\xc7\xe0\xe3\xf0. ') .. kb .. u8(' \xca\xc1 / ') .. tkb .. u8(' \xca\xc1'))
+      end
+
+      -- ── футер: автор + кнопка Telegram ──
+      imgui.Spacing()
+      imgui.Separator()
+      imgui.Spacing()
+
+      imgui.PushStyleColor(imgui.Col.Text, iv4(0.40,0.45,0.52,1))
+      imgui.Text(u8('Victor Strand'))
+      imgui.PopStyleColor(1)
+
+      imgui.SameLine()
+
+      local tgW = 88 * MDS
+      local tgH = 18 * MDS
+      imgui.SetCursorPosX(avail - tgW + imgui.GetStyle().WindowPadding.x)
+      imgui.PushStyleColor(imgui.Col.Button,        iv4(0.10,0.44,0.80,1))
+      imgui.PushStyleColor(imgui.Col.ButtonHovered, iv4(0.14,0.55,0.95,1))
+      imgui.PushStyleColor(imgui.Col.ButtonActive,  iv4(0.07,0.32,0.62,1))
+      imgui.PushStyleVarFloat(imgui.StyleVar.FrameRounding, 4*MDS)
+      if imgui.Button(u8('Telegram'), iv2(tgW, tgH)) then
+        openLink('https://t.me/strand_scripts')
+      end
+      imgui.PopStyleVar(1)
+      imgui.PopStyleColor(3)
+    end
+
+    imgui.End()
+  end
+)
+
+-- ─── Рендер ватермарков на экране ─────────────────────────────────────────
+imgui.OnFrame(
+  function() return #WaterMarks > 0 end,
+  function(self)
+    self.HideCursor = true
+
+    for i, wm in ipairs(WaterMarks) do
+      if not wm.visible[0] then goto continue end
+
+      local flags = imgui.WindowFlags.NoTitleBar
+                  + imgui.WindowFlags.NoCollapse
+                  + imgui.WindowFlags.NoScrollbar
+                  + imgui.WindowFlags.NoScrollWithMouse
+                  + imgui.WindowFlags.NoBringToFrontOnFocus
+                  + imgui.WindowFlags.NoSavedSettings
+
+      if not wm.movable[0] then
+        flags = flags + imgui.WindowFlags.NoMove
+                      + imgui.WindowFlags.NoResize
+                      + imgui.WindowFlags.NoBackground
+      end
+
+      imgui.SetNextWindowPos( iv2(wm.px, wm.py), imgui.Cond.Always)
+      imgui.SetNextWindowSize(iv2(wm.w,  wm.h),  imgui.Cond.Always)
+      imgui.SetNextWindowBgAlpha(0)
+
+      imgui.Begin("##wm" .. i, wm.visible, flags)
+      local s   = imgui.GetWindowSize()
+      local pos = imgui.GetWindowPos()
+
+      imgui.SetCursorPos(iv2(0, 0))
+      imgui.Image(
+        wm.texture, s,
+        iv2(0,0), iv2(1,1),
+        iv4(1, 1, 1, wm.opacity[0])
+      )
+
+      if wm.movable[0] and imgui.IsWindowFocused(0) then
+        if pos.x ~= wm.px or pos.y ~= wm.py or s.x ~= wm.w or s.y ~= wm.h then
+          wm.px = pos.x;  wm.py = pos.y
+          wm.w  = s.x;    wm.h  = s.y
+          wm:syncSliders()
+        end
+      end
+
+      imgui.End()
+      ::continue::
+    end
+  end
+)
+
+-- ─── Команда ──────────────────────────────────────────────────────────────
+sampRegisterChatCommand("banner", function()
+  window[0] = not window[0]
+end)
+
+-- ─── Утилиты ──────────────────────────────────────────────────────────────
+function basename(path)
+  return path:match("^.+/(.+)$") or path
+end
+
+math.randomseed(os.time())
+function generateUniqueFileName(length)
+  local chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  local function gen()
+    local s = ''
+    for _ = 1, length do
+      local idx = math.random(1, #chars)
+      s = s .. chars:sub(idx, idx)
+    end
+    return s
+  end
+  local name = gen()
+  while doesFileExist(watermarksDir .. "/" .. name .. ".png") do name = gen() end
+  return name
+end
+
+-- ─── Читалка размеров изображений ─────────────────────────────────────────
+pcall(function()
+  ffi.cdef[[
+    typedef struct {
+        uint8_t  signature[8];
+        uint32_t length;
+        char     type[4];
+        uint32_t width;
+        uint32_t height;
+    } WM_PNGHeader;
+    typedef struct {
+        uint16_t bfType;
+        uint32_t bfSize;
+        uint16_t bfReserved1;
+        uint16_t bfReserved2;
+        uint32_t bfOffBits;
+        uint32_t biSize;
+        uint32_t biWidth;
+        uint32_t biHeight;
+    } WM_BMPHeader;
+  ]]
+end)
+
+local function swap32(v)
+  return bit.bor(
+    bit.lshift(bit.band(v, 0x000000FF), 24),
+    bit.lshift(bit.band(v, 0x0000FF00),  8),
+    bit.rshift(bit.band(v, 0x00FF0000),  8),
+    bit.rshift(bit.band(v, 0xFF000000), 24)
+  )
+end
+
+function get_image_size(file_path)
+  local file = io.open(file_path, "rb")
+  if not file then return nil, "Cannot open file" end
+
+  local header = file:read(24)
+  if not header or #header < 4 then file:close(); return nil, "Short read" end
+  file:seek("set", 0)
+
+  local b1, b2, b3, b4 = header:byte(1), header:byte(2), header:byte(3), header:byte(4)
+
+  if b1 == 0x89 and b2 == 0x50 and b3 == 0x4E and b4 == 0x47 then
+    local h = ffi.cast("WM_PNGHeader*", header)
+    file:close()
+    return swap32(tonumber(h.width)), swap32(tonumber(h.height))
+
+  elseif b1 == 0x42 and b2 == 0x4D then
+    local h = ffi.cast("WM_BMPHeader*", header)
+    file:close()
+    return tonumber(h.biWidth), tonumber(h.biHeight)
+
+  elseif b1 == 0xFF and b2 == 0xD8 then
+    file:seek("set", 2)
+    local w, h2 = 0, 0
+    while true do
+      local seg = file:read(4)
+      if not seg or #seg < 4 then break end
+      local m1, m2 = seg:byte(1), seg:byte(2)
+      local len    = seg:byte(3) * 256 + seg:byte(4)
+      if m1 == 0xFF and (m2 == 0xC0 or m2 == 0xC2) then
+        local sof = file:read(5)
+        if sof and #sof >= 5 then
+          h2 = sof:byte(2) * 256 + sof:byte(3)
+          w  = sof:byte(4) * 256 + sof:byte(5)
+        end
+        break
+      elseif m1 == 0xFF and m2 == 0xD9 then
+        break
+      else
+        if len > 2 then file:read(len - 2) end
+      end
+    end
+    file:close()
+    if w > 0 then return w, h2 end
+    return nil, "No SOF in JPEG"
+  end
+
+  file:close()
+  return nil, "Unsupported format"
+end
+
+-- ─── downloadToFile (effil) ───────────────────────────────────────────────
+function downloadToFile(url, path, callback, progressInterval)
+  callback = callback or function() end
+  progressInterval = progressInterval or 0.1
+  local effil = require("effil")
+  local progressChannel = effil.channel(0)
+
+  local runner = effil.thread(function(url, path)
+    local http = require("socket.http")
+    local ltn  = require("ltn12")
+
+    local r, c, h = http.request({ method = "HEAD", url = url })
+    if c ~= 200 then return false, c end
+    local total_size = h["content-length"]
+
+    local f = io.open(path, "w+b")
+    if not f then return false, "failed to open file" end
+
+    local lastProgress
+    local success, res, status_code = pcall(http.request, {
+      method = "GET",
+      url    = url,
+      sink   = function(chunk, err)
+        local clock = os.clock()
+        if chunk and (not lastProgress or (clock - lastProgress) >= progressInterval) then
+          progressChannel:push("downloading", f:seek("end"), total_size)
+          lastProgress = os.clock()
+        elseif err then
+          progressChannel:push("error", err)
+        end
+        return ltn.sink.file(f)(chunk, err)
+      end,
+    })
+
+    if not success then return false, res end
+    if not res     then return false, status_code end
+    return true, total_size
+  end)
+
+  local thread = runner(url, path)
+
+  local function checkStatus()
+    local tstatus = thread:status()
+    if tstatus == "failed" or tstatus == "completed" then
+      local result, value = thread:get()
+      if result then callback("finished", value)
+      else            callback("error",   value) end
+      return true
+    end
+  end
+
+  lua_thread.create(function()
+    if checkStatus() then return end
+    while thread:status() == "running" do
+      if progressChannel:size() > 0 then
+        local evType, pos, total_size = progressChannel:pop()
+        callback(evType, pos, total_size)
+      end
+      wait(0)
+    end
+    checkStatus()
+  end)
+end

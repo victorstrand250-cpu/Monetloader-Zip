@@ -1,0 +1,14 @@
+{
+    "cnetgame_ctor_pattern": "FF0303D1FD7B06A9FC6F07A9FA6708A9F85F09A9F6570AA9F44F0BA9FD8301915CD03BD5881740F9F50300AA600900D000402491F60307AAF70306AAF30305AA",
+    "compat_scripts": [
+        "arzmod.lua",
+        "user.lua"
+    ],
+    "gtasa_name": "libGTASA.so",
+    "nveventinsertnewest_offset": 3362884,
+    "profile_name": "ARZMOD_GAME x64 | Version: 1712",
+    "rakclientinterface_netgame_offset": 48,
+    "receiveignorerpc_pattern": "FFC301D1FD7B01A9FB1300F9FA6703A9F85F04A9F65705A9F44F06A9FD430091560900B0D61641F9570900B0F71A41F974888A52C80240B935058452E90240B9",
+    "samp_name": "libarzmod.so",
+    "use_samp_touch_workaround": true
+}

@@ -1,0 +1,516 @@
+script_name('ScriptCatalog')
+script_author('Victor Strand')
+script_version('1.0')
+script_version_number(1)
+script_description('\xca\xe0\xf2\xe0\xeb\xee\xe3 \xf1\xea\xf0\xe8\xef\xf2\xee\xe2')
+script_properties('work-in-pause')
+
+local imgui    = require('mimgui')
+local ffi      = require('ffi')
+local encoding = require('encoding')
+local jsoncfg  = require('jsoncfg')
+local requests = require('requests')
+local lfs      = require('lfs')
+
+encoding.default = 'CP1251'
+local u8  = encoding.UTF8
+local MDS = MONET_DPI_SCALE
+
+local AUTHOR_TG    = 'https://t.me/victor_st0'
+local CHANNEL_TG   = 'https://t.me/strand_scripts'
+local CATALOG_FILE = 'catalog_scripts'
+local FOLDER       = getWorkingDirectory() .. '/ScriptCatalog'
+local IMAGES_DIR   = FOLDER .. '/images'
+
+local CLR = {
+    BG          = imgui.ImVec4(0.05, 0.05, 0.07, 0.98),
+    HEADER      = imgui.ImVec4(0.08, 0.08, 0.12, 1.00),
+    CARD        = imgui.ImVec4(0.09, 0.09, 0.13, 1.00),
+    CARD_HOV    = imgui.ImVec4(0.12, 0.12, 0.17, 1.00),
+    ACCENT      = imgui.ImVec4(1.00, 0.50, 0.05, 1.00),
+    ACCENT2     = imgui.ImVec4(0.20, 0.70, 1.00, 1.00),
+    VIP_GOLD    = imgui.ImVec4(1.00, 0.82, 0.10, 1.00),
+    FREE_GREEN  = imgui.ImVec4(0.15, 0.85, 0.45, 1.00),
+    TEXT        = imgui.ImVec4(0.95, 0.95, 0.95, 1.00),
+    TEXT_DIM    = imgui.ImVec4(0.55, 0.55, 0.60, 1.00),
+    BORDER      = imgui.ImVec4(0.18, 0.18, 0.25, 1.00),
+    BTN         = imgui.ImVec4(1.00, 0.50, 0.05, 1.00),
+    BTN_HOV     = imgui.ImVec4(1.00, 0.65, 0.20, 1.00),
+    BTN_ACT     = imgui.ImVec4(0.80, 0.38, 0.02, 1.00),
+    SEP         = imgui.ImVec4(0.20, 0.20, 0.28, 1.00),
+    INPUT_BG    = imgui.ImVec4(0.07, 0.07, 0.10, 1.00),
+}
+
+local function u32c(r, g, b, a)
+    a = a or 1.0
+    return bit.bor(
+        bit.lshift(math.min(255, math.floor(a*255+.5)), 24),
+        bit.lshift(math.min(255, math.floor(b*255+.5)), 16),
+        bit.lshift(math.min(255, math.floor(g*255+.5)),  8),
+                   math.min(255, math.floor(r*255+.5)))
+end
+
+local DEFAULT_SCRIPTS = {
+    {
+        name        = u8('\xc1\xee\xf2 \xd4\xe5\xf0\xec\xe0 \xd5\xeb\xee\xef\xea\xe0/\xcb\xfc\xed\xe0'),
+        short       = u8('\xc0\xe2\xf2\xee\xec\xe0\xf2\xe8\xf7\xe5\xf1\xea\xe8\xe9 \xe1\xee\xf2 \xe4\xeb\xff \xf1\xe1\xee\xf0\xe0 \xf5\xeb\xee\xef\xea\xe0 \xe8 \xeb\xfc\xed\xe0 \xed\xe0 \xf1\xe5\xf0\xe2\xe5\xf0\xe5 Arizona RP.\x0a\xd0\xe0\xe1\xee\xf2\xe0\xe5\xf2 24/7 \xe1\xe5\xe7 \xef\xf0\xe5\xf0\xfb\xe2\xed\xee\xf1\xf2\xe8.'),
+        vip         = true,
+        price_month = '3$',
+        price_year  = '28$',
+        tg_link     = AUTHOR_TG,
+        img_url     = 'https://raw.githubusercontent.com/victorstrand250-cpu/Photo-Katalog/refs/heads/main/file_0000000036a0720abc49af32cb501c9a.png',
+        img_file    = 'farm_bot.png',
+    },
+    {
+        name        = u8('\xc1\xee\xf2 \xd2\xd0\xc0\xcc\xc2\xc0\xc9'),
+        short       = u8('\xc0\xe2\xf2\xee\xec\xe0\xf2\xe8\xf7\xe5\xf1\xea\xe8\xe9 \xe1\xee\xf2 \xe2\xee\xe4\xe8\xf2\xe5\xeb\xff \xf2\xf0\xe0\xec\xe2\xe0\xff. \xc1\xe5\xf1\xef\xeb\xe0\xf2\xed\xee \xe4\xeb\xff \xea\xe0\xe6\xe4\xee\xe3\xee!'),
+        vip         = false,
+        price_month = nil,
+        price_year  = nil,
+        tg_link     = CHANNEL_TG,
+        img_url     = 'https://raw.githubusercontent.com/victorstrand250-cpu/Photo-Katalog/refs/heads/main/1775526101667.png',
+        img_file    = 'tram_bot.png',
+    },
+    {
+        name        = u8('Track Helper'),
+        short       = u8('\xd5\xe5\xeb\xef\xe5\xf0 \xe4\xeb\xff \xf0\xe0\xe1\xee\xf2\xfb \xe4\xe0\xeb\xfc\xed\xee\xe1\xee\xe9\xf9\xe8\xea\xe0 \xed\xe0 Arizona RP. \xd3\xef\xf0\xee\xf9\xe0\xe5\xf2 \xe4\xee\xf1\xf2\xe0\xe2\xea\xf3 \xe3\xf0\xf3\xe7\xee\xe2.'),
+        vip         = false,
+        price_month = nil,
+        price_year  = nil,
+        tg_link     = CHANNEL_TG,
+        img_url     = 'https://raw.githubusercontent.com/victorstrand250-cpu/Photo-Katalog/refs/heads/main/1776333245763.png',
+        img_file    = 'track_helper.png',
+    },
+    {
+        name        = u8('Object Menu'),
+        short       = u8('\xcc\xe5\xed\xfe \xe4\xeb\xff \xf1\xee\xe7\xe4\xe0\xed\xe8\xff \xe2\xe8\xe7\xf3\xe0\xeb\xfc\xed\xfb\xf5 \xee\xe1\xfa\xe5\xea\xf2\xee\xe2, \xf0\xe5\xe4\xe0\xea\xf2\xe8\xf0\xee\xe2\xe0\xed\xe8\xff \xef\xee\xe7\xe8\xf6\xe8\xe9, \xf3\xe3\xeb\xee\xe2 \xe8 \xf1\xee\xf5\xf0\xe0\xed\xe5\xed\xe8\xff \xe2 \xf4\xe0\xe9\xeb.'),
+        vip         = false,
+        price_month = nil,
+        price_year  = nil,
+        tg_link     = CHANNEL_TG,
+        img_url     = 'https://raw.githubusercontent.com/victorstrand250-cpu/Photo-Katalog/refs/heads/main/file_00000000041c71f48308c9fdf10ef1f0.png',
+        img_file    = 'object_menu.png',
+    },
+}
+
+local resx, resy = getScreenResolution()
+
+local mainWin    = imgui.new.bool(false)
+local scripts    = {}
+local textures   = {}
+local texPending = {}
+local fMain, fBig, fSmall = nil, nil, nil
+
+local function ensureDirs()
+    pcall(function() lfs.mkdir(FOLDER) end)
+    pcall(function() lfs.mkdir(IMAGES_DIR) end)
+end
+
+local function openLink(url)
+    local ok = pcall(function()
+        local ffi2 = require('ffi')
+        local gta  = ffi2.load('libGTASA.so')
+        ffi2.cdef[[ void _Z12AND_OpenLinkPKc(const char* link); ]]
+        gta._Z12AND_OpenLinkPKc(url)
+    end)
+    if not ok then
+        os.execute('am start -a android.intent.action.VIEW -d "' .. url .. '"')
+    end
+end
+
+local function loadCatalog()
+    local saved = jsoncfg.load({ scripts = {} }, CATALOG_FILE)
+    local result = {}
+    for _, s in ipairs(DEFAULT_SCRIPTS) do
+        table.insert(result, s)
+    end
+    if saved and saved.scripts then
+        for _, s in ipairs(saved.scripts) do
+            table.insert(result, s)
+        end
+    end
+    return result, saved
+end
+
+local function saveUserScripts(userScripts)
+    jsoncfg.save({ scripts = userScripts }, CATALOG_FILE)
+end
+
+local function scheduleDownload(imgFile, imgUrl)
+    if textures[imgFile] then return end
+    textures[imgFile] = 'loading'
+    lua_thread.create(function()
+        local path = IMAGES_DIR .. '/' .. imgFile
+        if doesFileExist(path) then
+            local f = io.open(path, 'rb')
+            if f then
+                local hdr = f:read(8); f:close()
+                local valid = false
+                if hdr then
+                    if hdr:byte(1)==0x89 and hdr:byte(2)==0x50 and hdr:byte(3)==0x4E and hdr:byte(4)==0x47 then
+                        valid = true
+                    end
+                    if hdr:byte(1)==0xFF and hdr:byte(2)==0xD8 and hdr:byte(3)==0xFF then
+                        valid = true
+                    end
+                end
+                if not valid then
+                    os.remove(path)
+                end
+            else
+                os.remove(path)
+            end
+        end
+        if not doesFileExist(path) then
+            local ok, resp = pcall(requests.get, imgUrl)
+            if ok and resp and resp.status_code == 200 then
+                local data = resp.text
+                if data and #data > 100 then
+                    local f = io.open(path, 'wb')
+                    if f then f:write(data); f:close() end
+                else
+                    textures[imgFile] = 'failed'; return
+                end
+            else
+                textures[imgFile] = 'failed'; return
+            end
+        end
+        table.insert(texPending, { file = imgFile, path = path })
+    end)
+end
+
+imgui.OnInitialize(function()
+    imgui.SwitchContext()
+    local io = imgui.GetIO()
+    io.IniFilename = nil
+    imgui.GetStyle():ScaleAllSizes(MDS)
+
+    local ttf = getWorkingDirectory() .. '/lib/mimgui/trebucbd.ttf'
+    if doesFileExist(ttf) then
+        local ranges = io.Fonts:GetGlyphRangesCyrillic()
+        fSmall = io.Fonts:AddFontFromFileTTF(ttf, 12*MDS, nil, ranges)
+        fMain  = io.Fonts:AddFontFromFileTTF(ttf, 14*MDS, nil, ranges)
+        fBig   = io.Fonts:AddFontFromFileTTF(ttf, 18*MDS, nil, ranges)
+    end
+
+    local s = imgui.GetStyle()
+    s.WindowRounding    = 10*MDS
+    s.ChildRounding     = 8*MDS
+    s.FrameRounding     = 6*MDS
+    s.GrabRounding      = 6*MDS
+    s.PopupRounding     = 6*MDS
+    s.ScrollbarRounding = 4*MDS
+    s.WindowBorderSize  = 1
+    s.FrameBorderSize   = 0
+    s.WindowPadding     = imgui.ImVec2(10*MDS, 10*MDS)
+    s.FramePadding      = imgui.ImVec2(8*MDS,  5*MDS)
+    s.ItemSpacing       = imgui.ImVec2(8*MDS,  6*MDS)
+    s.ScrollbarSize     = 14*MDS
+
+    local c = s.Colors
+    c[imgui.Col.WindowBg]             = CLR.BG
+    c[imgui.Col.ChildBg]              = CLR.CARD
+    c[imgui.Col.Text]                 = CLR.TEXT
+    c[imgui.Col.TextDisabled]         = CLR.TEXT_DIM
+    c[imgui.Col.Border]               = CLR.BORDER
+    c[imgui.Col.FrameBg]              = CLR.INPUT_BG
+    c[imgui.Col.FrameBgHovered]       = imgui.ImVec4(0.12, 0.12, 0.18, 1)
+    c[imgui.Col.FrameBgActive]        = imgui.ImVec4(0.15, 0.15, 0.22, 1)
+    c[imgui.Col.Button]               = CLR.BTN
+    c[imgui.Col.ButtonHovered]        = CLR.BTN_HOV
+    c[imgui.Col.ButtonActive]         = CLR.BTN_ACT
+    c[imgui.Col.Header]               = imgui.ImVec4(0.15, 0.15, 0.22, 1)
+    c[imgui.Col.HeaderHovered]        = imgui.ImVec4(0.20, 0.20, 0.30, 1)
+    c[imgui.Col.TitleBg]              = CLR.HEADER
+    c[imgui.Col.TitleBgActive]        = CLR.HEADER
+    c[imgui.Col.ScrollbarBg]          = imgui.ImVec4(0.04, 0.04, 0.06, 1)
+    c[imgui.Col.ScrollbarGrab]        = imgui.ImVec4(0.25, 0.25, 0.35, 1)
+    c[imgui.Col.ScrollbarGrabHovered] = imgui.ImVec4(0.35, 0.35, 0.45, 1)
+    c[imgui.Col.Tab]                  = imgui.ImVec4(0.08, 0.08, 0.12, 1)
+    c[imgui.Col.TabHovered]           = imgui.ImVec4(0.20, 0.20, 0.30, 1)
+    c[imgui.Col.TabActive]            = CLR.ACCENT
+    c[imgui.Col.Separator]            = CLR.SEP
+    c[imgui.Col.CheckMark]            = CLR.ACCENT
+    c[imgui.Col.SliderGrab]           = CLR.ACCENT
+    c[imgui.Col.SliderGrabActive]     = CLR.BTN_HOV
+    c[imgui.Col.PopupBg]              = imgui.ImVec4(0.06, 0.06, 0.09, 0.98)
+end)
+
+local function pushAccentColor()
+    imgui.PushStyleColor(imgui.Col.Button,        CLR.BTN)
+    imgui.PushStyleColor(imgui.Col.ButtonHovered, CLR.BTN_HOV)
+    imgui.PushStyleColor(imgui.Col.ButtonActive,  CLR.BTN_ACT)
+end
+
+local function popAccentColor()
+    imgui.PopStyleColor(3)
+end
+
+local function centerText(text, width)
+    local sz = imgui.CalcTextSize(text)
+    local off = (width - sz.x) * 0.5
+    if off > 0 then imgui.SetCursorPosX(imgui.GetCursorPosX() + off) end
+    imgui.Text(text)
+end
+
+local function drawBadge(isVip)
+    if isVip then
+        imgui.PushStyleColor(imgui.Col.Button,        CLR.VIP_GOLD)
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, CLR.VIP_GOLD)
+        imgui.PushStyleColor(imgui.Col.ButtonActive,  CLR.VIP_GOLD)
+        imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.05,0.05,0.05,1))
+        imgui.SmallButton(' VIP ')
+        imgui.PopStyleColor(4)
+    else
+        imgui.PushStyleColor(imgui.Col.Button,        CLR.FREE_GREEN)
+        imgui.PushStyleColor(imgui.Col.ButtonHovered, CLR.FREE_GREEN)
+        imgui.PushStyleColor(imgui.Col.ButtonActive,  CLR.FREE_GREEN)
+        imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.02,0.02,0.02,1))
+        imgui.SmallButton(u8(' FREE '))
+        imgui.PopStyleColor(4)
+    end
+end
+
+local function drawScriptCard(sc, index)
+    local CARD_W = imgui.GetContentRegionAvail().x - 4*MDS
+    local IMG_W  = 130*MDS
+    local IMG_H  = 90*MDS
+    local CARD_H = IMG_H + 20*MDS
+
+    imgui.PushStyleColor(imgui.Col.ChildBg, CLR.CARD)
+
+    local clicked = false
+    if imgui.BeginChild('card'..index, imgui.ImVec2(CARD_W, CARD_H), true,
+        bit.bor(imgui.WindowFlags.NoScrollbar, imgui.WindowFlags.NoScrollWithMouse)) then
+        local dl = imgui.GetWindowDrawList()
+        local wp = imgui.GetWindowPos()
+        local ww = imgui.GetWindowWidth()
+
+        local imgFile = sc.img_file
+        local tex     = textures[imgFile]
+
+        local imgPos = imgui.GetCursorPos()
+        if tex and tex ~= 'loading' and tex ~= 'failed' and tex ~= true then
+            imgui.Image(tex, imgui.ImVec2(IMG_W, IMG_H))
+        else
+            local p = imgui.GetCursorScreenPos()
+            dl:AddRectFilled(
+                imgui.ImVec2(p.x, p.y),
+                imgui.ImVec2(p.x+IMG_W, p.y+IMG_H),
+                u32c(0.10, 0.10, 0.15), 6*MDS)
+            dl:AddRect(
+                imgui.ImVec2(p.x, p.y),
+                imgui.ImVec2(p.x+IMG_W, p.y+IMG_H),
+                u32c(0.25, 0.25, 0.35), 6*MDS)
+            if fSmall then imgui.PushFont(fSmall) end
+            if tex == 'loading' then
+                local loadTxt = u8('\xc7\xe0\xe3\xf0\xf3\xe7\xea\xe0...')
+                local tsz = imgui.CalcTextSize(loadTxt)
+                dl:AddText(
+                    imgui.ImVec2(p.x + IMG_W/2 - tsz.x/2, p.y + IMG_H/2 - tsz.y/2),
+                    u32c(0.5, 0.5, 0.6), loadTxt)
+            elseif tex == 'failed' then
+                local failTxt = u8('\xce\xf8\xe8\xe1\xea\xe0')
+                local tsz = imgui.CalcTextSize(failTxt)
+                dl:AddText(
+                    imgui.ImVec2(p.x + IMG_W/2 - tsz.x/2, p.y + IMG_H/2 - tsz.y/2),
+                    u32c(0.8, 0.3, 0.3), failTxt)
+            else
+                local noTxt = u8('\xcd\xe5\xf2 \xf4\xee\xf2\xee')
+                local tsz = imgui.CalcTextSize(noTxt)
+                dl:AddText(
+                    imgui.ImVec2(p.x + IMG_W/2 - tsz.x/2, p.y + IMG_H/2 - tsz.y/2),
+                    u32c(0.4, 0.4, 0.5), noTxt)
+            end
+            if fSmall then imgui.PopFont() end
+            imgui.Dummy(imgui.ImVec2(IMG_W, IMG_H))
+        end
+
+        imgui.SameLine()
+        imgui.SetCursorPosX(IMG_W + 14*MDS)
+        imgui.SetCursorPosY(6*MDS)
+        local rightW = CARD_W - IMG_W - 24*MDS
+
+        imgui.BeginGroup()
+            if fBig then imgui.PushFont(fBig) end
+            imgui.PushStyleColor(imgui.Col.Text, CLR.TEXT)
+            imgui.TextUnformatted(sc.name)
+            imgui.PopStyleColor(1)
+            if fBig then imgui.PopFont() end
+
+            imgui.SameLine()
+            imgui.SetCursorPosY(imgui.GetCursorPosY() + 2*MDS)
+            drawBadge(sc.vip)
+
+            if fSmall then imgui.PushFont(fSmall) end
+            imgui.PushStyleColor(imgui.Col.Text, CLR.TEXT_DIM)
+            imgui.TextWrapped(sc.short)
+            imgui.PopStyleColor(1)
+            if fSmall then imgui.PopFont() end
+
+            if sc.vip and sc.price_month then
+                imgui.PushStyleColor(imgui.Col.Text, CLR.VIP_GOLD)
+                if fSmall then imgui.PushFont(fSmall) end
+                imgui.Text(u8('\xd6\xe5\xed\xe0: ') .. sc.price_month ..
+                    u8('/\xec\xe5\xf1 \xe8\xeb\xe8 ') .. (sc.price_year or '?') .. u8('/\xe3\xee\xe4'))
+                if fSmall then imgui.PopFont() end
+                imgui.PopStyleColor(1)
+            end
+
+            local btnLabel = sc.vip
+                and u8('\xca\xf3\xef\xe8\xf2\xfc / \xd2\xee\xf0\xe3\xee\xe2\xe0\xf2\xfc\xf1\xff')
+                or  u8('\xd1\xea\xe0\xf7\xe0\xf2\xfc / \xd7\xe0\xf2 \xea\xe0\xed\xe0\xeb\xe0')
+            local btnW = math.min(rightW - 4*MDS, 200*MDS)
+            pushAccentColor()
+            if imgui.Button(btnLabel, imgui.ImVec2(btnW, 26*MDS)) then
+                clicked = true
+            end
+            popAccentColor()
+        imgui.EndGroup()
+
+        imgui.EndChild()
+    end
+
+    imgui.PopStyleColor(1)
+
+    if clicked and sc.tg_link then
+        openLink(sc.tg_link)
+    end
+
+    imgui.Spacing()
+end
+
+local function drawCatalogTab()
+    imgui.Spacing()
+    for i, sc in ipairs(scripts) do
+        drawScriptCard(sc, i)
+    end
+    if #scripts == 0 then
+        imgui.Spacing()
+        imgui.PushStyleColor(imgui.Col.Text, CLR.TEXT_DIM)
+        centerText(u8('\xca\xe0\xf2\xe0\xeb\xee\xe3 \xef\xf3\xf1\xf2. \xc4\xee\xe1\xe0\xe2\xfc\xf2\xe5 \xef\xe5\xf0\xe2\xfb\xe9 \xf1\xea\xf0\xe8\xef\xf2!'), -1)
+        imgui.PopStyleColor(1)
+    end
+end
+
+imgui.OnFrame(
+    function() return mainWin[0] end,
+    function(self)
+        self.HideCursor = false
+        self.LockPlayer = false
+
+        local W = resx * 0.55
+        local H = resy * 0.85
+
+        imgui.SetNextWindowPos(
+            imgui.ImVec2(resx * 0.5, resy * 0.5),
+            imgui.Cond.Once,
+            imgui.ImVec2(0.5, 0.5))
+        imgui.SetNextWindowSize(imgui.ImVec2(W, H), imgui.Cond.Once)
+
+        if fMain then imgui.PushFont(fMain) end
+
+        local flags = bit.bor(
+            imgui.WindowFlags.NoCollapse,
+            imgui.WindowFlags.NoResize
+        )
+
+        imgui.Begin(u8('\xca\xe0\xf2\xe0\xeb\xee\xe3 \xf1\xea\xf0\xe8\xef\xf2\xee\xe2 \xe2 Arizona RP  |  @strand_scripts'), mainWin, flags)
+
+            local dl = imgui.GetWindowDrawList()
+            local wp = imgui.GetWindowPos()
+            local ww = imgui.GetWindowWidth()
+            dl:AddRectFilled(
+                imgui.ImVec2(wp.x, wp.y + 22*MDS),
+                imgui.ImVec2(wp.x + ww, wp.y + 50*MDS),
+                u32c(0.08, 0.08, 0.12))
+
+            imgui.SetCursorPosY(27*MDS)
+            imgui.Spacing()
+
+            local tabW = ww - 20*MDS
+            imgui.PushStyleColor(imgui.Col.Button,        CLR.ACCENT)
+            imgui.PushStyleColor(imgui.Col.ButtonHovered, CLR.BTN_HOV)
+            imgui.PushStyleColor(imgui.Col.ButtonActive,  CLR.BTN_ACT)
+            imgui.PushStyleColor(imgui.Col.Text, imgui.ImVec4(0.02,0.02,0.02,1))
+            imgui.Button(u8('\xca\xe0\xf2\xe0\xeb\xee\xe3'), imgui.ImVec2(tabW, 30*MDS))
+            imgui.PopStyleColor(4)
+
+            imgui.Spacing()
+            imgui.Separator()
+            imgui.Spacing()
+
+            drawCatalogTab()
+
+        imgui.End()
+
+        if #texPending > 0 then
+            local item = table.remove(texPending, 1)
+            if doesFileExist(item.path) then
+                local tex = imgui.CreateTextureFromFile(item.path)
+                if tex then
+                    textures[item.file] = tex
+                else
+                    textures[item.file] = 'failed'
+                end
+            else
+                textures[item.file] = 'failed'
+            end
+        end
+
+        if fMain then imgui.PopFont() end
+    end
+)
+
+EXPORTS = {
+    canToggle = function() return true end,
+    getToggle = function() return mainWin[0] end,
+    toggle    = function() mainWin[0] = not mainWin[0] end,
+}
+
+local userScripts = {}
+
+function main()
+    while not isSampAvailable() do wait(100) end
+    while not sampIsLocalPlayerSpawned() do wait(200) end
+
+    ensureDirs()
+
+    local saved
+    scripts, saved = loadCatalog()
+    userScripts = (saved and saved.scripts) or {}
+
+    sampRegisterChatCommand('catalog', function()
+        mainWin[0] = not mainWin[0]
+    end)
+    sampRegisterChatCommand('cat', function()
+        mainWin[0] = not mainWin[0]
+    end)
+
+    sampAddChatMessage(
+        '[ScriptCatalog] \xc7\xe0\xe3\xf0\xf3\xe6\xe5\xed. /catalog \xe8\xeb\xe8 /cat',
+        0xFF9900)
+
+    lua_thread.create(function()
+        wait(500)
+        for _, sc in ipairs(scripts) do
+            if sc.img_url and sc.img_file then
+                scheduleDownload(sc.img_file, sc.img_url)
+                wait(200)
+            end
+        end
+    end)
+
+    while true do
+        wait(0)
+        if WIDGET_RADAR ~= nil and isWidgetSwipedLeft(WIDGET_RADAR) then
+            mainWin[0] = not mainWin[0]
+            wait(300)
+        end
+    end
+end
+
+addEventHandler('onScriptTerminate', function(s, q)
+    if s == script.this then
+    end
+end)

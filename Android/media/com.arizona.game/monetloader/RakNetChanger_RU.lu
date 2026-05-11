@@ -1,0 +1,1291 @@
+--=============================================================
+-- RakNet Changer  |  \xd0\xf3\xf1\xf1\xea\xe8\xe9 \xe8\xed\xf2\xe5\xf0\xf4\xe5\xe9\xf1  |  v1.2-RU
+-- \xce\xf0\xe8\xe3\xe8\xed\xe0\xeb: Ega  |  \xd0\xe5\xe4\xe0\xea\xf6\xe8\xff \xe8\xed\xf2\xe5\xf0\xf4\xe5\xe9\xf1\xe0 & \xe8\xf1\xef\xf0\xe0\xe2\xeb\xe5\xed\xe8\xff
+--=============================================================
+
+script_name("RakNet Changer RU")
+script_author("Ega / UI-edit")
+script_description("\xc8\xed\xf1\xf2\xf0\xf3\xec\xe5\xed\xf2 \xe4\xeb\xff \xf0\xe0\xe1\xee\xf2\xfb \xf1 SA-MP \xef\xe0\xea\xe5\xf2\xe0\xec\xe8 \xe8 RPC")
+script_version("1.2-RU")
+
+--=============================================================
+-- \xc1\xe8\xe1\xeb\xe8\xee\xf2\xe5\xea\xe8
+--=============================================================
+
+local inicfg   = require("inicfg")
+local ffi      = require("ffi")
+local imgui    = require("mimgui")
+local encoding = require("encoding")
+
+local ok, RakLua = pcall(require, "RakLua")
+if not ok then
+    local gta = ffi.load('GTASA')
+    ffi.cdef[[ void _Z12AND_OpenLinkPKc(const char* link); ]]
+    sampAddChatMessage("\xd0\xe0\xea\xcd\xe5\xf2 \xc7\xe0\xec\xe5\xed\xf8\xe8\xea: RakLua \xed\xe5 \xed\xe0\xe9\xe4\xe5\xed! \xd3\xf1\xf2\xe0\xed\xee\xe2\xe8\xf2\xe5 \xef\xee: https://t.me/monetbinder/88", -1)
+    gta._Z12AND_OpenLinkPKc("https://t.me/monetbinder/88")
+    return
+end
+
+local fa  = require("fAwesome6_solid")
+local lfs = require("lfs")
+
+--=============================================================
+-- \xca\xee\xed\xf4\xe8\xe3
+--=============================================================
+
+local mainIni = inicfg.load({
+    config = {
+        twist              = 0,
+        style              = 0,
+        notifications      = true,
+        hints              = true,
+        logs               = true,
+        logs_quitGameClean = false,
+        logs_outrpc        = false,
+        logs_inrpc         = false,
+        logs_outpacket     = false,
+        logs_inpacket      = false,
+        logs_scenario      = false,
+        menu_keys          = "[122]"
+    }
+}, "raknet.ini")
+
+if not doesFileExist("config/raknet.ini") then inicfg.save(mainIni, "raknet.ini") end
+
+if mainIni.config.logs then
+    if not doesDirectoryExist("raklog") then createDirectory("raklog") end
+    if not doesFileExist("raklog/raklog.txt") then
+        local f = io.open("raklog/raklog.txt", "w"); f:close()
+    end
+end
+
+--=============================================================
+-- \xc3\xeb\xee\xe1\xe0\xeb\xfc\xed\xfb\xe5 \xef\xe5\xf0\xe5\xec\xe5\xed\xed\xfb\xe5
+--=============================================================
+
+local MDS    = MONET_DPI_SCALE
+local new    = imgui.new
+local u8     = encoding.UTF8
+local str    = ffi.string
+local sizeof = ffi.sizeof
+local ToU32  = imgui.ColorConvertFloat4ToU32
+local sizeX, sizeY = getScreenResolution()
+
+encoding.default = "CP1251"
+
+-- \xcf\xe5\xf0\xe5\xec\xe5\xed\xed\xfb\xe5 \xf1\xee\xf1\xf2\xee\xff\xed\xe8\xff UI
+local bsPage   = nil   -- \xf2\xe5\xea\xf3\xf9\xe0\xff \xf1\xf2\xf0\xe0\xed\xe8\xf6\xe0 \xe4\xe5\xf2\xe0\xeb\xe9 (\xe8\xec\xff \xef\xe0\xea\xe5\xf2\xe0)
+local bsActive = false -- \xee\xf2\xea\xf0\xfb\xf2\xe0 \xeb\xe8 \xef\xe0\xed\xe5\xeb\xfc \xe4\xe5\xf2\xe0\xeb\xe9
+local showall  = false -- \xef\xee\xea\xe0\xe7\xfb\xe2\xe0\xf2\xfc \xf2\xee\xeb\xfc\xea\xee \xe0\xea\xf2\xe8\xe2\xed\xfb\xe5
+local list     = {}    -- \xed\xee\xf2\xe8\xf4\xe8\xea\xe0\xf6\xe8\xe8
+
+-- \xd1\xef\xe8\xf1\xea\xe8 \xe4\xeb\xff \xea\xee\xec\xe1\xee
+local twist_list = { u8"\xcc\xff\xe3\xea\xea\xe8\xe9", u8"\xd0\xe5\xe7\xea\xe8\xe9" }
+local style_list = { u8"\xd2\xe5\xec\xed\xe0\xff",    u8"\xc1\xe8\xf0\xfe\xe7\xee\xe2\xe0\xff" }
+
+-- \xc7\xe0\xe3\xee\xeb\xee\xe2\xea\xe8 \xef\xe0\xed\xe5\xeb\xe5\xe9 \xf5\xf3\xea\xee\xe2 \xe8 \xed\xee\xef\xee\xe2
+local header_name = {
+    u8"\xc8\xf1\xf5\xee\xe4\xff\xf9\xe8\xe5 RPC",
+    u8"\xc2\xf5\xee\xe4\xff\xf9\xe8\xe5 RPC",
+    u8"\xc8\xf1\xf5\xee\xe4\xff\xf9\xe8\xe5 \xef\xe0\xea\xe5\xf2\xfb",
+    u8"\xc2\xf5\xee\xe4\xff\xf9\xe8\xe5 \xef\xe0\xea\xe5\xf2\xfb"
+}
+
+--=============================================================
+-- ffi-\xe1\xf3\xf4\xe5\xf0\xfb \xea\xee\xed\xf4\xe8\xe3\xf3\xf0\xe0\xf6\xe8\xe8
+--=============================================================
+
+local config = {
+    mainWindow    = new.bool(),
+    notifications = new.bool(mainIni.config.notifications),
+    hints         = new.bool(mainIni.config.hints),
+    logs = {
+        actived        = new.bool(mainIni.config.logs),
+        quitGameClean  = new.bool(mainIni.config.logs_quitGameClean),
+        outrpc         = new.bool(mainIni.config.logs_outrpc),
+        inrpc          = new.bool(mainIni.config.logs_inrpc),
+        outpacket      = new.bool(mainIni.config.logs_outpacket),
+        inpacket       = new.bool(mainIni.config.logs_inpacket),
+        scenario       = new.bool(mainIni.config.logs_scenario)
+    },
+    header = {
+        hook      = { new.bool(true), new.bool(), new.bool(), new.bool() },
+        nop       = { new.bool(true), new.bool(), new.bool(), new.bool() },
+        bitstream = { new.bool(true), new.bool() },
+        other     = { new.bool(true), new.bool() }
+    },
+    page          = new.int(1),
+    style         = new.int(mainIni.config.style),
+    twist         = new.int(mainIni.config.twist),
+    scenarios     = new.int(0),
+    style_combo   = imgui.new["const char*"][#style_list](style_list),
+    twist_combo   = imgui.new["const char*"][#twist_list](twist_list),
+    search        = new.char[256](),
+    search_scenarios = new.char[256](),
+}
+
+-- \xcc\xe5\xed\xfe \xf1\xeb\xe5\xe2\xe0: \xe8\xea\xee\xed\xea\xe0 + \xf0\xf3\xf1\xf1\xea\xee\xe5 \xed\xe0\xe7\xe2\xe0\xed\xe8\xe5
+local MENU_LABELS = {
+    fa.FILE_EXPORT     .. u8"  \xc8\xf1\xf5. \xef\xe0\xea\xe5\xf2\xfb",
+    fa.FILE_IMPORT     .. u8"  \xc2\xf5. \xef\xe0\xea\xe5\xf2\xfb",
+    fa.CLOUD_ARROW_UP  .. u8"  \xc8\xf1\xf5. RPC",
+    fa.CLOUD_ARROW_DOWN.. u8"  \xc2\xf5. RPC",
+    fa.BUG             .. u8"  \xd5\xf3\xea\xe8",
+    fa.BAN             .. u8"  \xcd\xee\xef\xfb",
+    fa.LIST            .. u8"  \xd1\xf6\xe5\xed\xe0\xf0\xe8\xe8",
+    fa.HAMMER          .. u8"  \xd1\xef\xe8\xf1\xee\xea \xc8\xc4",
+    fa.GEARS           .. u8"  \xcd\xe0\xf1\xf2\xf0\xee\xe9\xea\xe8",
+}
+
+--=============================================================
+-- \xd1\xee\xf1\xf2\xee\xff\xed\xe8\xe5 RakNet
+--=============================================================
+
+local RakNet = {
+    emul_rpc    = { selected = nil, slots = {} },
+    send_rpc    = { selected = nil, slots = {} },
+    emul_packet = { selected = nil, slots = {} },
+    send_packet = { selected = nil, slots = {} },
+    nop = {
+        outrpc_selected    = nil, inrpc_selected    = nil,
+        outpacket_selected = nil, inpacket_selected = nil
+    },
+    hook = {
+        outrpc    = { selected = nil, slots = {} },
+        inrpc     = { selected = nil, slots = {} },
+        outpacket = { selected = nil, slots = {} },
+        inpacket  = { selected = nil, slots = {} }
+    },
+    scenarios_selected       = nil,
+    scenarios_selected_slots = nil,
+    scenarios = {},
+}
+
+--=============================================================
+-- \xc1\xe0\xe7\xe0 \xe4\xe0\xed\xed\xfb\xf5: \xc8\xd1\xd5\xce\xc4\xdf\xd9\xc8\xc5 RPC
+--=============================================================
+
+local OUTCOMING_RPC = {
+    { 23,  name="CLICKPLAYER",       bs={{ "playerId","uint16"   },{ "source","int8"     }},                                                                                                                                                                                                                                                     description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xed\xe0\xe6\xe0\xf2\xe8\xe8 \xed\xe0 \xe8\xe3\xf0\xee\xea\xe0 \xe2 \xf1\xef\xe8\xf1\xea\xe5.",           nop=false, hook=false },
+    { 25,  name="CLIENTJOIN",        bs={{ "version","int32"     },{ "mod","uint8"        },{ "nickname","string8"      },{ "challengeResponse","uint32"},{ "joinAuthKey","string8"},{ "clientVer","string8"},{ "challengeResponse2","uint32"}}, description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xef\xee\xe4\xea\xeb\xfe\xf7\xe5\xed\xe8\xe8 \xea \xf1\xe5\xf0\xe2\xe5\xf0\xf3.",         nop=false, hook=false },
+    { 26,  name="ENTERVEHICLE",      bs={{ "vehicleId","uint16"  },{ "passenger","bool8"  }},                                                                                                                                                                                                                                                    description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xe2\xf5\xee\xe4\xe5 \xe2 \xf2\xf0\xe0\xed\xf1\xef\xee\xf0\xf2.",              nop=false, hook=false },
+    { 27,  name="ENTEREDITOBJECT",   bs={{ "type","uint32"       },{ "objectId","uint16"  },{ "model","uint32"          },{ "positionX","float"          },{ "positionY","float"  },{ "positionZ","float"   }},                                  description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xed\xe0\xe6\xe0\xf2\xe8\xe8 \xed\xe0 \xee\xe1\xfa\xe5\xea\xf2.",              nop=false, hook=false },
+    { 50,  name="SERVERCOMMAND",     bs={{ "command","string32"  }},                                                                                                                                                                                                                                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2 \xea\xee\xec\xe0\xed\xe4\xf3 \xed\xe0 \xf1\xe5\xf0\xe2\xe5\xf0.",                       nop=false, hook=false },
+    { 52,  name="SPAWN",             bs={},                                                                                                                                                                                                                                                                                                      description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xef\xee\xff\xe2\xeb\xe5\xed\xe8\xe8.",                           nop=false, hook=false },
+    { 53,  name="DEATH",             bs={{ "reason","uint8"      },{ "killerId","uint16"  }},                                                                                                                                                                                                                                                    description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xf1\xec\xe5\xf0\xf2\xe8.",                                   nop=false, hook=false },
+    { 62,  name="DIALOGRESPONSE",    bs={{ "dialogId","uint16"   },{ "button","uint8"     },{ "listboxId","int16"       },{ "input","string8"           }},                                                                                      description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xe7\xe0\xea\xf0\xfb\xf2\xe8\xe8 \xe4\xe8\xe0\xeb\xee\xe3\xe0.",             nop=false, hook=false },
+    { 83,  name="CLICKTEXTDRAW",     bs={{ "textdrawId","uint16" }},                                                                                                                                                                                                                                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xed\xe0\xe6\xe0\xf2\xe8\xe8 \xed\xe0 TextDraw.",               nop=false, hook=false },
+    { 96,  name="SCMEVENT",          bs={{ "vehicleId","uint32"  },{ "param1","int32"     },{ "param2","int32"          },{ "event","uint32"            }},                                                                                      description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xe4\xe5\xe9\xf1\xf2\xe2\xe8\xe8 \xed\xe0\xe4 \xf2\xf0\xe0\xed\xf1\xef\xee\xf0\xf2\xee\xec.",      nop=false, hook=false },
+    { 101, name="CHAT",              bs={{ "message","string8"   }},                                                                                                                                                                                                                                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2 \xf1\xee\xee\xe1\xf9\xe5\xed\xe8\xe5 \xed\xe0 \xf1\xe5\xf0\xe2\xe5\xf0.",              nop=false, hook=false },
+    { 115, name="GIVETAKEDAMAGE",    bs={{ "take","bool"         },{ "playerId","uint16"  },{ "damage","float"          },{ "weapon","uint32"           },{ "bodyPart","uint32"  }},                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xed\xe0\xed\xe5\xf1\xe5\xed\xe8\xe8/\xef\xee\xeb\xf3\xf7\xe5\xed\xe8\xe8 \xf3\xf0\xee\xed\xe0.",  nop=false, hook=false },
+    { 128, name="REQUESTCLASS",      bs={{ "classId","uint32"    }},                                                                                                                                                                                                                                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xe2\xfb\xe1\xee\xf0\xe5 \xea\xeb\xe0\xf1\xf1\xe0.",             nop=false, hook=false },
+    { 129, name="REQUESTSPAWN",      bs={},                                                                                                                                                                                                                                                                                                      description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xed\xe0\xe6\xe0\xf2\xe8\xe8 \xef\xee\xff\xe2\xeb\xe5\xed\xe8\xff.",            nop=false, hook=false },
+    { 131, name="PICKEDUPPICKUP",    bs={{ "pickupId","uint32"   }},                                                                                                                                                                                                                                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xe2\xe7\xff\xf2\xe8\xe8 \xef\xe8\xea\xe0\xef\xe0.",              nop=false, hook=false },
+    { 154, name="EXITVEHICLE",       bs={{ "vehicleId","uint16"  }},                                                                                                                                                                                                                                                                             description="\xce\xf2\xef\xf0\xe0\xe2\xeb\xff\xe5\xf2\xf1\xff \xef\xf0\xe8 \xe2\xfb\xf5\xee\xe4\xe5 \xe8\xe7 \xf2\xf0\xe0\xed\xf1\xef\xee\xf0\xf2\xe0.",         nop=false, hook=false },
+}
+
+--=============================================================
+-- \xc1\xe0\xe7\xe0 \xe4\xe0\xed\xed\xfb\xf5: \xc2\xd5\xce\xc4\xdf\xd9\xc8\xc5 RPC
+--=============================================================
+
+local INCOMING_RPC = {
+    { 11,  name="SETPLAYERNAME",         bs={{ "playerId","uint16" },{ "name","string8"  },{ "success","bool8"          }},                                                                                             description="\xd3\xf1\xf2\xe0\xed\xe0\xe2\xeb\xe8\xe2\xe0\xe5\xf2 \xe8\xe3\xf0\xee\xea\xf3 \xe8\xec\xff.",      nop=false, hook=false },
+    { 12,  name="SETPLAYERPOS",          bs={{ "x","float"         },{ "y","float"       },{ "z","float"                }},                                                                                             description="\xd3\xf1\xf2\xe0\xed\xe0\xe2\xeb\xe8\xe2\xe0\xe5\xf2 \xef\xee\xe7\xe8\xf6\xe8\xfe \xe8\xe3\xf0\xee\xea\xe0.", nop=false, hook=false },
+    { 14,  name="SETPLAYERHEALTH",       bs={{ "health","float"    }},                                                                                                                                                  description="\xd3\xf1\xf2\xe0\xed\xe0\xe2\xeb\xe8\xe2\xe0\xe5\xf2 \xe7\xe4\xee\xf0\xee\xe2\xfc\xe5 \xe8\xe3\xf0\xee\xea\xf3.",  nop=false, hook=false },
+    { 18,  name="GIVEPLAYERMONEY",       bs={{ "money","uint32"    }},                                                                                                                                                  description="\xc2\xfb\xe4\xe0\xb8\xf2 \xe4\xe5\xed\xfc\xe3\xe8 \xe8\xe3\xf0\xee\xea\xf3.",                   nop=false, hook=false },
+    { 22,  name="GIVEPLAYERWEAPON",      bs={{ "weaponId","uint32" },{ "ammo","uint32"   }},                                                                                                                            description="\xc2\xfb\xe4\xe0\xb8\xf2 \xee\xf0\xf3\xe6\xe8\xe5 \xe8\xe3\xf0\xee\xea\xf3.",                    nop=false, hook=false },
+    { 29,  name="SETPLAYERTIME",         bs={{ "hour","uint8"      },{ "minute","uint8"  }},                                                                                                                            description="\xd3\xf1\xf2\xe0\xed\xe0\xe2\xeb\xe8\xe2\xe0\xe5\xf2 \xe2\xf0\xe5\xec\xff \xf1\xf3\xf2\xee\xea.",            nop=false, hook=false },
+    { 62,  name="SHOWDIALOG",            bs={{ "dialogId","uint16" },{ "style","uint8"   },{ "title","string8"          },{ "btn1","string8"  },{ "btn2","string8"},{ "text","string8"}}, description="\xce\xf2\xee\xe1\xf0\xe0\xe6\xe0\xe5\xf2 \xe4\xe8\xe0\xeb\xee\xe3 \xe8\xe3\xf0\xee\xea\xf3.",                  nop=false, hook=false },
+    { 93,  name="SETPLAYERCOLOR",        bs={{ "playerId","uint16" },{ "color","uint32"  }},                                                                                                                            description="\xd3\xf1\xf2\xe0\xed\xe0\xe2\xeb\xe8\xe2\xe0\xe5\xf2 \xf6\xe2\xe5\xf2 \xe8\xe3\xf0\xee\xea\xe0.",           nop=false, hook=false },
+    { 156, name="CHATMSG",               bs={{ "color","uint32"    },{ "message","string8"}},                                                                                                                           description="\xd1\xee\xee\xe1\xf9\xe5\xed\xe8\xe5 \xe2 \xf7\xe0\xf2 \xee\xf2 \xf1\xe5\xf0\xe2\xe5\xf0\xe0.",            nop=false, hook=false },
+}
+
+--=============================================================
+-- \xc1\xe0\xe7\xe0 \xe4\xe0\xed\xed\xfb\xf5: \xc8\xd1\xd5\xce\xc4\xdf\xd9\xc8\xc5 \xcf\xc0\xca\xc5\xd2\xdb
+--=============================================================
+
+local OUTCOMING_PACKET = {
+    { 200, name="VEHICLE_SYNC",    bs={{ "vehicleId","uint16"  },{ "leftRightKeys","uint16"},{ "upDownKeys","uint16"},{ "keysData","uint16"},{ "qW","float"},{ "qX","float"},{ "qY","float"},{ "qZ","float"},{ "posX","float"},{ "posY","float"},{ "posZ","float"},{ "speedX","float"},{ "speedY","float"},{ "speedZ","float"},{ "health","float"},{ "pHealth","uint8"},{ "armor","uint8"},{ "weapon","uint8"},{ "siren","uint8"},{ "gear","uint8"},{ "trailerId","uint16"},{ "trainSpeed","float"}}, description="\xd1\xe8\xed\xf5\xf0\xee\xed\xe8\xe7\xe0\xf6\xe8\xff \xf2\xf0\xe0\xed\xf1\xef\xee\xf0\xf2\xe0.", nop=false, hook=false },
+    { 207, name="PLAYER_SYNC",     bs={{ "leftRightKeys","uint16"},{ "upDownKeys","uint16"},{ "keysData","uint16"},{ "posX","float"},{ "posY","float"},{ "posZ","float"},{ "qW","float"},{ "qX","float"},{ "qY","float"},{ "qZ","float"},{ "health","uint8"},{ "armor","uint8"},{ "weapon","uint8"},{ "specialAction","uint8"},{ "speedX","float"},{ "speedY","float"},{ "speedZ","float"},{ "animId","uint16"},{ "animFlags","uint16"}},                                                          description="\xd1\xe8\xed\xf5\xf0\xee\xed\xe8\xe7\xe0\xf6\xe8\xff \xe8\xe3\xf0\xee\xea\xe0.",    nop=false, hook=false },
+    { 203, name="AIM_SYNC",        bs={{ "camMode","uint8"     },{ "camFrontX","float"   },{ "camFrontY","float"},{ "camFrontZ","float"},{ "camPosX","float"},{ "camPosY","float"},{ "camPosZ","float"},{ "aimZ","float"},{ "camExtZoom","uint8"},{ "weaponState","uint8"},{ "unk","uint8"}},                                                                                                                                                                                                    description="\xd1\xe8\xed\xf5\xf0\xee\xed\xe8\xe7\xe0\xf6\xe8\xff \xef\xf0\xe8\xf6\xe5\xeb\xe8\xe2\xe0\xed\xe8\xff.",   nop=false, hook=false },
+}
+
+--=============================================================
+-- \xc1\xe0\xe7\xe0 \xe4\xe0\xed\xed\xfb\xf5: \xc2\xd5\xce\xc4\xdf\xd9\xc8\xc5 \xcf\xc0\xca\xc5\xd2\xdb
+--=============================================================
+
+local INCOMING_PACKET = {
+    { 31,  name="NO_FREE_CONNECTIONS",   bs={}, description="\xcd\xe5\xf2 \xf1\xe2\xee\xe1\xee\xe4\xed\xfb\xf5 \xf1\xeb\xee\xf2\xee\xe2 \xed\xe0 \xf1\xe5\xf0\xe2\xe5\xf0\xe5.",      nop=false, hook=false },
+    { 32,  name="DISCONNECTION",         bs={}, description="\xd1\xee\xe5\xe4\xe8\xed\xe5\xed\xe8\xe5 \xf1 \xf1\xe5\xf0\xe2\xe5\xf0\xee\xec \xe7\xe0\xea\xf0\xfb\xf2\xee.",             nop=false, hook=false },
+    { 33,  name="CONNECTION_LOST",       bs={}, description="\xd1\xee\xe5\xe4\xe8\xed\xe5\xed\xe8\xe5 \xf1 \xf1\xe5\xf0\xe2\xe5\xf0\xee\xec \xf3\xf2\xe5\xf0\xff\xed\xee.",              nop=false, hook=false },
+    { 200, name="VEHICLE_SYNC",          bs={{ "playerId","uint16"},{ "vehicleId","uint16"},{ "keys","uint16"},{ "posX","float"},{ "posY","float"},{ "posZ","float"},{ "health","float"},{ "pHealth","uint8"},{ "armor","uint8"}}, description="\xd1\xe8\xed\xf5\xf0\xee\xed\xe8\xe7\xe0\xf6\xe8\xff \xf2\xf0\xe0\xed\xf1\xef\xee\xf0\xf2\xe0 (\xf1\xe5\xf0\xe2\xe5\xf0).", nop=false, hook=false },
+    { 207, name="PLAYER_SYNC",           bs={{ "playerId","uint16"},{ "keys","uint16"},{ "posX","float"},{ "posY","float"},{ "posZ","float"},{ "health","uint8"},{ "armor","uint8"},{ "weapon","uint8"}},                         description="\xd1\xe8\xed\xf5\xf0\xee\xed\xe8\xe7\xe0\xf6\xe8\xff \xe8\xe3\xf0\xee\xea\xe0 (\xf1\xe5\xf0\xe2\xe5\xf0).",    nop=false, hook=false },
+}
+
+--=============================================================
+-- \xc2\xf1\xef\xee\xec\xee\xe3\xe0\xf2\xe5\xeb\xfc\xed\xfb\xe5 \xf4\xf3\xed\xea\xf6\xe8\xe8
+--=============================================================
+
+function getBitstream(entry)
+    local data = {}
+    for _, v in ipairs(entry.bs) do
+        data[#data+1] = { name=v[1], type=v[2] }
+    end
+    return data
+end
+
+function getInfo(kind, idx)
+    local tbl = (kind=="rpc out") and OUTCOMING_RPC
+             or (kind=="rpc in")  and INCOMING_RPC
+             or (kind=="pkt out") and OUTCOMING_PACKET
+             or INCOMING_PACKET
+    return { id=tbl[idx][1], name=tbl[idx].name }
+end
+
+-- \xd3\xed\xe8\xe2\xe5\xf0\xf1\xe0\xeb\xfc\xed\xfb\xe9 inputVars — \xe7\xe0\xec\xe5\xed\xff\xe5\xf2 8 \xea\xee\xef\xe8\xf0\xf3\xe5\xec\xfb\xf5 \xe1\xeb\xee\xea\xee\xe2
+local function fillSlots(target, bs_data)
+    target = {}
+    for _, v in ipairs(bs_data) do
+        local n, t = v.name, v.type
+        if n and t then
+            local buf
+            if     t:find("float")   then buf = new.float(0.0)
+            elseif t:find("int")     then buf = new.int(0)
+            elseif t:find("string")  then buf = new.char[256]()
+            elseif t:find("encoded") then buf = new.char[256]()
+            elseif t:find("bool")    then buf = new.bool()
+            end
+            if buf then target[#target+1] = { n, t, buf } end
+        end
+    end
+    return target
+end
+
+function inputVars(kind)
+    if     kind=="pkt out"      then RakNet.send_packet.slots   = fillSlots(RakNet.send_packet.slots,   getBitstream(OUTCOMING_PACKET[RakNet.send_packet.selected]))
+    elseif kind=="pkt in"       then RakNet.emul_packet.slots   = fillSlots(RakNet.emul_packet.slots,   getBitstream(INCOMING_PACKET [RakNet.emul_packet.selected]))
+    elseif kind=="rpc out"      then RakNet.send_rpc.slots       = fillSlots(RakNet.send_rpc.slots,       getBitstream(OUTCOMING_RPC   [RakNet.send_rpc.selected]))
+    elseif kind=="rpc in"       then RakNet.emul_rpc.slots       = fillSlots(RakNet.emul_rpc.slots,       getBitstream(INCOMING_RPC    [RakNet.emul_rpc.selected]))
+    elseif kind=="hook pkt out" then RakNet.hook.outpacket.slots = fillSlots(RakNet.hook.outpacket.slots, getBitstream(OUTCOMING_PACKET[RakNet.hook.outpacket.selected]))
+    elseif kind=="hook pkt in"  then RakNet.hook.inpacket.slots  = fillSlots(RakNet.hook.inpacket.slots,  getBitstream(INCOMING_PACKET [RakNet.hook.inpacket.selected]))
+    elseif kind=="hook rpc out" then RakNet.hook.outrpc.slots    = fillSlots(RakNet.hook.outrpc.slots,    getBitstream(OUTCOMING_RPC   [RakNet.hook.outrpc.selected]))
+    elseif kind=="hook rpc in"  then RakNet.hook.inrpc.slots     = fillSlots(RakNet.hook.inrpc.slots,     getBitstream(INCOMING_RPC    [RakNet.hook.inrpc.selected]))
+    end
+end
+
+function getTime()
+    return os.date("!%H:%M:%S", os.time() + 3*3600)
+end
+
+function Notification(text, time, color)
+    list[#list+1] = { text=text, time=time, start=os.clock(), alpha=0, colors=color }
+end
+
+function ColorNotification()
+    if mainIni.config.style == 0 then
+        return { back={0.06,0.05,0.07,1}, text={0.80,0.80,0.83,1}, icon={0.80,0.80,0.83,1}, border={0.06,0.05,0.07,1} }
+    else
+        return { back={0.11,0.15,0.17,1}, text={0.86,0.93,0.89,0.78}, icon={0.86,0.93,0.89,0.78}, border={0.11,0.15,0.17,1} }
+    end
+end
+
+function tableToImVec(t) return imgui.ImVec4(t[1],t[2],t[3],t[4]) end
+function limit(v,a,b) return v<a and a or (v>b and b or v) end
+function set_alpha(c,a) return imgui.ImVec4(c.x,c.y,c.z,limit(a or 1,0,1)) end
+
+function bringFloatTo(from, to, t0, dur)
+    local dt = os.clock()-t0
+    if dt>=0 and dt<=dur then return from+(dt/dur)*(to-from), true end
+    return dt>dur and to or from, false
+end
+function bringVec4To(from, to, t0, dur)
+    local dt = os.clock()-t0
+    if dt>=0 and dt<=dur then
+        local p=dt/dur
+        return imgui.ImVec4(from.x+p*(to.x-from.x),from.y+p*(to.y-from.y),from.z+p*(to.z-from.z),from.w+p*(to.w-from.w)), true
+    end
+    return dt>dur and to or from, false
+end
+function bringVec2To(from, to, t0, dur)
+    local dt = os.clock()-t0
+    if dt>=0 and dt<=dur then
+        local p=dt/dur
+        return imgui.ImVec2(from.x+p*(to.x-from.x),from.y+p*(to.y-from.y)), true
+    end
+    return dt>dur and to or from, false
+end
+
+function isPlaceHovered(a,b)
+    local m=imgui.GetMousePos()
+    return m.x>=a.x and m.y>=a.y and m.x<=b.x and m.y<=b.y
+end
+
+--=============================================================
+-- emulData — \xee\xf2\xef\xf0\xe0\xe2\xea\xe0/\xfd\xec\xf3\xeb\xff\xf6\xe8\xff \xef\xe0\xea\xe5\xf2\xe0
+--=============================================================
+
+function emulData(id, kind, cdata, scenario)
+    local logActive = config.logs.actived[0]
+    local file = nil
+    if logActive then
+        if not doesDirectoryExist("raklog") then createDirectory("raklog") end
+        file = io.open("raklog/raklog.txt","a")
+    end
+
+    local bs = RakLuaBitStream.new()
+    if kind:find("pkt out") then bs:writeUInt8(id) end
+
+    local function writeField(t, val)
+        if     t:find("float") then bs:writeFloat(val[0])
+        elseif t:find("uint8")  then bs:writeUInt8(val[0])
+        elseif t:find("uint16") then bs:writeUInt16(val[0])
+        elseif t:find("uint32") then bs:writeUInt32(val[0])
+        elseif t:find("int8")   then bs:writeInt8(val[0])
+        elseif t:find("int16")  then bs:writeInt16(val[0])
+        elseif t:find("int32")  then bs:writeInt32(val[0])
+        elseif t:find("string") then
+            local s = u8:decode(str(val))
+            if t:find("8") then bs:writeUInt8(#s) else bs:writeUInt32(#s) end
+            bs:writeString(s)
+        elseif t:find("encoded") then bs:writeEncoded(u8:decode(str(val)))
+        elseif t:find("bool")   then bs:writeBool(val[0])
+        end
+    end
+
+    for _, d in ipairs(cdata) do
+        writeField(d[1], d[2])
+    end
+
+    local logTag = ""
+    if     kind=="rpc out"  then bs:sendRPC(id);             logTag="Send RPC "
+    elseif kind=="rpc in"   then bs:emulIncomingRPC(id);     logTag="Emul RPC "
+    elseif kind=="pkt out"  then bs:sendPacket();            logTag="Send PKT "
+    else                         bs:emulIncomingPacket(id);  logTag="Emul PKT "
+    end
+
+    if logActive and file then
+        file:write("["..getTime().."] "..logTag..id.."\n")
+        for _, d in ipairs(cdata) do
+            local val = d[1]:find("string") and u8:decode(str(d[2])) or tostring(d[2][0])
+            file:write("  "..d[3]..": "..val.."\n")
+        end
+        file:close()
+    end
+end
+
+--=============================================================
+-- Style
+--=============================================================
+
+function Style()
+    local s      = imgui.GetStyle()
+    local colors = s.Colors
+    local clr    = imgui.Col
+    local V4     = imgui.ImVec4
+    local dark   = mainIni.config.style == 0
+
+    s.WindowRounding   = dark and 15 or 5
+    s.FrameRounding    = dark and 7  or 3
+    s.ScrollbarRounding= dark and 9  or 3
+    s.GrabRounding     = dark and 3  or 1
+    s.ChildRounding    = dark and 10 or 3
+    s.WindowTitleAlign = imgui.ImVec2(0.5,0.5)
+    s.WindowPadding    = imgui.ImVec2(15,15)
+    s.WindowBorderSize = 0
+    s.FramePadding     = imgui.ImVec2(5,5)
+    s.ItemSpacing      = imgui.ImVec2(12,8)
+    s.ItemInnerSpacing = imgui.ImVec2(8,6)
+    s.ScrollbarSize    = 20
+
+    -- \xd6\xe2\xe5\xf2\xe0 \xf2\xe5\xec\xed\xee\xe9 \xf2\xe5\xec\xfb
+    if dark then
+        colors[clr.Text]             = V4(0.80,0.80,0.83,1)
+        colors[clr.TextDisabled]     = V4(0.24,0.23,0.29,1)
+        colors[clr.WindowBg]         = V4(0.06,0.05,0.07,1)
+        colors[clr.ChildBg]          = V4(0.06,0.05,0.07,0)
+        colors[clr.FrameBg]          = V4(0.10,0.09,0.12,1)
+        colors[clr.FrameBgHovered]   = V4(0.24,0.23,0.29,1)
+        colors[clr.FrameBgActive]    = V4(0.56,0.56,0.58,1)
+        colors[clr.TitleBgActive]    = V4(0.07,0.07,0.09,1)
+        colors[clr.Button]           = V4(0.10,0.09,0.12,1)
+        colors[clr.ButtonHovered]    = V4(0.24,0.23,0.29,1)
+        colors[clr.ButtonActive]     = V4(0.56,0.56,0.58,1)
+        colors[clr.Header]           = V4(0.10,0.09,0.12,1)
+        colors[clr.HeaderHovered]    = V4(0.56,0.56,0.58,1)
+        colors[clr.HeaderActive]     = V4(0.06,0.05,0.07,1)
+        colors[clr.ScrollbarBg]      = V4(0.10,0.09,0.12,1)
+        colors[clr.ScrollbarGrab]    = V4(0.80,0.80,0.83,0.31)
+        colors[clr.CheckMark]        = V4(0.80,0.80,0.83,0.31)
+    else
+        -- \xc1\xe8\xf0\xfe\xe7\xee\xe2\xe0\xff \xf2\xe5\xec\xe0
+        colors[clr.Text]             = V4(0.86,0.93,0.89,0.78)
+        colors[clr.TextDisabled]     = V4(0.36,0.42,0.47,1)
+        colors[clr.WindowBg]         = V4(0.11,0.15,0.17,1)
+        colors[clr.ChildBg]          = V4(0.15,0.18,0.22,1)
+        colors[clr.FrameBg]          = V4(0.20,0.25,0.29,1)
+        colors[clr.FrameBgHovered]   = V4(0.12,0.20,0.28,1)
+        colors[clr.FrameBgActive]    = V4(0.09,0.12,0.14,1)
+        colors[clr.TitleBgActive]    = V4(0.16,0.48,0.42,1)
+        colors[clr.Button]           = V4(0.26,0.98,0.85,0.30)
+        colors[clr.ButtonHovered]    = V4(0.26,0.98,0.85,0.50)
+        colors[clr.ButtonActive]     = V4(0.06,0.98,0.82,0.50)
+        colors[clr.Header]           = V4(0.26,0.98,0.85,0.31)
+        colors[clr.HeaderHovered]    = V4(0.26,0.98,0.85,0.80)
+        colors[clr.HeaderActive]     = V4(0.26,0.98,0.85,1)
+        colors[clr.ScrollbarGrab]    = V4(0.20,0.25,0.29,1)
+        colors[clr.CheckMark]        = V4(0.26,0.98,0.85,1)
+    end
+end
+
+--=============================================================
+-- imgui-\xe2\xe8\xe4\xe6\xe5\xf2\xfb
+--=============================================================
+
+function imgui.TextQuestion(label, desc)
+    imgui.PushStyleColor(imgui.Col.TextDisabled, imgui.ImVec4(0.80,0.80,0.83,1))
+    imgui.TextDisabled(label)
+    if imgui.IsItemHovered() then
+        imgui.BeginTooltip()
+        imgui.PushTextWrapPos(600)
+        imgui.TextUnformatted(desc)
+        imgui.PopTextWrapPos()
+        imgui.EndTooltip()
+    end
+    imgui.PopStyleColor()
+end
+
+local AI_TOGGLE   = {}
+function imgui.ToggleButton(str_id, value)
+    local duration  = 0.3
+    local p  = imgui.GetCursorScreenPos()
+    local DL = imgui.GetWindowDrawList()
+    local size = imgui.ImVec2(40,20)
+    local title = str_id:gsub("##.*$","")
+    local ts  = imgui.CalcTextSize(title)
+    local cols = {
+        enable  = imgui.GetStyle().Colors[imgui.Col.ButtonActive],
+        disable = imgui.GetStyle().Colors[imgui.Col.TextDisabled]
+    }
+    local radius,ox = 6, 4
+    local A = imgui.ImVec2(p.x+radius+ox, p.y+size.y/2)
+    local B = imgui.ImVec2(p.x+size.x-radius-ox, p.y+size.y/2)
+
+    if not AI_TOGGLE[str_id] then
+        AI_TOGGLE[str_id] = { clock=nil, color=value[0] and cols.enable or cols.disable, pos=value[0] and B or A }
+    end
+    local pool = AI_TOGGLE[str_id]
+
+    imgui.BeginGroup()
+    local pos    = imgui.GetCursorPos()
+    local result = imgui.InvisibleButton(str_id, size)
+    if result then value[0]=not value[0]; pool.clock=os.clock() end
+    if #title>0 then
+        local spc = imgui.GetStyle().ItemSpacing
+        imgui.SetCursorPos(imgui.ImVec2(pos.x+size.x+spc.x, pos.y+(size.y-ts.y)/2))
+        imgui.Text(title)
+    end
+    imgui.EndGroup()
+
+    if pool.clock and os.clock()-pool.clock<=duration then
+        pool.color = bringVec4To(imgui.ImVec4(pool.color), value[0] and cols.enable or cols.disable, pool.clock, duration)
+        pool.pos   = bringVec2To(imgui.ImVec2(pool.pos),   value[0] and B or A, pool.clock, duration)
+    else
+        pool.color = value[0] and cols.enable or cols.disable
+        pool.pos   = value[0] and B or A
+    end
+
+    DL:AddRect(p, imgui.ImVec2(p.x+size.x,p.y+size.y), ToU32(pool.color), 10, 15, 1)
+    DL:AddCircleFilled(pool.pos, radius, ToU32(pool.color))
+    return result
+end
+
+local AI_HEADERBUT = {}
+function imgui.HeaderButton(bool, str_id)
+    local DL     = imgui.GetWindowDrawList()
+    local result = false
+    local label  = str_id:gsub("##.*$","")
+    local dur    = { 0.5, 0.3 }
+    local cols   = {
+        idle = imgui.GetStyle().Colors[imgui.Col.TextDisabled],
+        hovr = imgui.GetStyle().Colors[imgui.Col.Text],
+        slct = imgui.GetStyle().Colors[imgui.Col.ButtonActive]
+    }
+    if not AI_HEADERBUT[str_id] then
+        AI_HEADERBUT[str_id] = {
+            color = bool and cols.slct or cols.idle,
+            clock = os.clock()+dur[1],
+            h     = { state=bool, alpha=bool and 1 or 0, clock=os.clock()+dur[2] }
+        }
+    end
+    local pool = AI_HEADERBUT[str_id]
+
+    imgui.BeginGroup()
+    local pos = imgui.GetCursorPos()
+    local p   = imgui.GetCursorScreenPos()
+    imgui.TextColored(pool.color, label)
+    local s       = imgui.GetItemRectSize()
+    local hovered = isPlaceHovered(p, imgui.ImVec2(p.x+s.x,p.y+s.y))
+    local clicked = imgui.IsItemClicked()
+
+    if pool.h.state~=hovered and not bool then pool.h.state=hovered; pool.h.clock=os.clock() end
+    if clicked then pool.clock=os.clock(); result=true end
+
+    if os.clock()-pool.clock<=dur[1] then
+        pool.color = bringVec4To(imgui.ImVec4(pool.color), bool and cols.slct or (hovered and cols.hovr or cols.idle), pool.clock, dur[1])
+    else
+        pool.color = bool and cols.slct or (hovered and cols.hovr or cols.idle)
+    end
+
+    if pool.h.clock then
+        if os.clock()-pool.h.clock<=dur[2] then
+            pool.h.alpha = bringFloatTo(pool.h.alpha, pool.h.state and 1 or 0, pool.h.clock, dur[2])
+        else
+            pool.h.alpha = pool.h.state and 1 or 0
+            if not pool.h.state then pool.h.clock=nil end
+        end
+        local max = s.x/2
+        local Y   = p.y+s.y+3
+        local mid = p.x+max
+        DL:AddLine(imgui.ImVec2(mid,Y), imgui.ImVec2(mid+max*pool.h.alpha,Y), ToU32(set_alpha(pool.color,pool.h.alpha)), 3)
+        DL:AddLine(imgui.ImVec2(mid,Y), imgui.ImVec2(mid-max*pool.h.alpha,Y), ToU32(set_alpha(pool.color,pool.h.alpha)), 3)
+    end
+    imgui.EndGroup()
+    return result
+end
+
+local LastActiveTime, LastActive = {}, {}
+function imgui.CustomMenu(labels, selected, size, speed, centering)
+    local bool  = false
+    speed       = speed or 0.2
+    local radius    = size.y*0.5
+    local draw_list = imgui.GetWindowDrawList()
+    for i,v in ipairs(labels) do
+        local c = imgui.GetCursorPos()
+        local p = imgui.GetCursorScreenPos()
+        if imgui.InvisibleButton(v.."##"..i, size) then
+            selected[0]=i; LastActiveTime[v]=os.clock(); LastActive[v]=true; bool=true
+        end
+        imgui.SetCursorPos(c)
+        local t = selected[0]==i and 1.0 or 0.0
+        if LastActive[v] then
+            local dt = os.clock()-LastActiveTime[v]
+            if dt<=0.3 then
+                local ta = dt/speed
+                ta = ta<0 and 0 or (ta>1 and 1 or ta)
+                t = selected[0]==i and ta or 1.0-ta
+            else LastActive[v]=false end
+        end
+        local col_bg  = imgui.GetColorU32Vec4(selected[0]==i and imgui.GetStyle().Colors[imgui.Col.ButtonActive] or imgui.ImVec4(0,0,0,0))
+        local col_box = imgui.GetColorU32Vec4(selected[0]==i and imgui.GetStyle().Colors[imgui.Col.Button]       or imgui.ImVec4(0,0,0,0))
+        local ch      = imgui.GetStyle().Colors[imgui.Col.ButtonHovered]
+        local col_hov = imgui.GetColorU32Vec4(imgui.ImVec4(ch.x,ch.y,ch.z,(imgui.IsItemHovered() and 0.2 or 0)))
+        draw_list:AddRectFilled(imgui.ImVec2(p.x-size.x/6,p.y), imgui.ImVec2(p.x+(radius*0.65)+t*size.x,p.y+size.y), col_bg, 10)
+        draw_list:AddRectFilled(imgui.ImVec2(p.x-size.x/6,p.y), imgui.ImVec2(p.x+(radius*0.65)+size.x,p.y+size.y), col_hov, 10)
+        draw_list:AddRectFilled(imgui.ImVec2(p.x,p.y),           imgui.ImVec2(p.x+5,p.y+size.y), col_box)
+        imgui.SetCursorPos(imgui.ImVec2(c.x+(centering and (size.x-imgui.CalcTextSize(v).x)/2 or 8), c.y+(size.y-imgui.CalcTextSize(v).y)/2))
+        imgui.Text(v)
+        imgui.SetCursorPos(imgui.ImVec2(c.x, c.y+size.y))
+    end
+    return bool
+end
+
+--=============================================================
+-- \xd5\xe5\xeb\xef\xe5\xf0: \xf0\xe5\xed\xe4\xe5\xf0 \xef\xee\xeb\xe5\xe9 \xe2\xe2\xee\xe4\xe0 \xe4\xeb\xff \xef\xe0\xea\xe5\xf2\xe0
+--=============================================================
+
+local function renderSlots(slots)
+    for _, s in ipairs(slots) do
+        local name, t, var = s[1].." ("..s[2]..")", s[2], s[3]
+        if     t:find("float")   then imgui.InputFloat(name, var, sizeof(var))
+        elseif t:find("int")     then imgui.InputInt(name, var, sizeof(var))
+        elseif t:find("string")  then imgui.InputText(name, var, sizeof(var))
+        elseif t:find("encoded") then imgui.InputText(name, var, sizeof(var))
+        elseif t:find("bool")    then imgui.ToggleButton(name, var)
+        end
+    end
+end
+
+-- \xd5\xe5\xeb\xef\xe5\xf0: \xf1\xf2\xf0\xee\xea\xe0 \xef\xee\xe8\xf1\xea\xe0
+local function searchStr() return str(config.search) end
+
+-- \xd5\xe5\xeb\xef\xe5\xf0: \xf1\xef\xe8\xf1\xee\xea \xe4\xeb\xff \xef\xee\xe8\xf1\xea\xe0 \xf1 \xf4\xe8\xeb\xfc\xf2\xf0\xee\xec
+local function filteredList(tbl, kind, query)
+    local out = {}
+    for i=1,#tbl do
+        local info  = getInfo(kind,i)
+        local title = info.name.." ["..info.id.."]"
+        if #query==0 or title:lower():find(query:lower()) then
+            out[#out+1] = { i=i, info=info, title=title, entry=tbl[i] }
+        end
+    end
+    return out
+end
+
+--=============================================================
+-- \xd0\xe5\xed\xe4\xe5\xf0 \xf1\xef\xe8\xf1\xea\xe0 (\xeb\xe5\xe2\xe0\xff \xef\xe0\xed\xe5\xeb\xfc) + \xe2\xfb\xe1\xee\xf0 \xef\xe0\xea\xe5\xf2\xe0
+--=============================================================
+
+local function renderPacketList(tbl, kind, selState, bsKind, bsPageVal, filterBS)
+    imgui.PushItemWidth(420*MDS)
+    imgui.Text(u8"\xcf\xee\xe8\xf1\xea:"); imgui.SameLine()
+    imgui.InputText("##Search", config.search, sizeof(config.search))
+    imgui.Separator()
+
+    local q    = searchStr()
+    local rows = filteredList(tbl, kind, q)
+    for _, row in ipairs(rows) do
+        -- \xe5\xf1\xeb\xe8 filterBS — \xef\xee\xea\xe0\xe7\xfb\xe2\xe0\xe5\xec \xf2\xee\xeb\xfc\xea\xee \xf2\xe5, \xf3 \xea\xee\xe3\xee \xe5\xf1\xf2\xfc \xef\xee\xeb\xff bs
+        if not filterBS or #getBitstream(row.entry) > 0 then
+            local sel = imgui.Selectable("##sel"..row.info.name, selState.selected==row.i, imgui.SelectableFlags.AllowDoubleClick)
+            imgui.SameLine(8*MDS)
+            if config.hints[0] then
+                imgui.TextQuestion(row.title, u8(row.entry.description))
+            else
+                imgui.Text(row.title)
+            end
+            if sel then
+                selState.selected = row.i
+                bsPage  = bsPageVal
+                inputVars(bsKind)
+                bsActive = true
+            end
+        end
+    end
+end
+
+--=============================================================
+-- \xd1\xf2\xf0\xe0\xed\xe8\xf6\xe0 "\xd1\xef\xe8\xf1\xee\xea ID" (\xef\xe0\xe3\xe5 8) — \xcb\xce\xd2\xc0 \xfd\xf2\xee\xe3\xee \xf1\xea\xf0\xe8\xef\xf2\xe0
+--=============================================================
+
+-- \xf1\xf5\xf0\xe0\xed\xff\xe5\xec \xef\xe5\xf0\xe5\xf5\xe2\xe0\xf7\xe5\xed\xed\xfb\xe5 ID
+local capturedIDs = { rpc_in={}, rpc_out={}, pkt_in={}, pkt_out={} }
+local capturingEnabled = new.bool(false)
+
+local function renderIDMonitor()
+    imgui.Text(u8"\xc8\xed\xf1\xf2\xf0\xf3\xec\xe5\xed\xf2 \xef\xe5\xf0\xe5\xf5\xe2\xe0\xf2\xe0 ID \xef\xe0\xea\xe5\xf2\xee\xe2")
+    imgui.Separator()
+
+    imgui.ToggleButton(u8"\xcf\xe5\xf0\xe5\xf5\xe2\xe0\xf2\xfb\xe2\xe0\xf2\xfc ID", capturingEnabled)
+    imgui.SameLine()
+    if imgui.Button(u8"\xce\xf7\xe8\xf1\xf2\xe8\xf2\xfc") then
+        capturedIDs = { rpc_in={}, rpc_out={}, pkt_in={}, pkt_out={} }
+    end
+
+    imgui.Spacing()
+    imgui.Text(u8"\xc2 \xf0\xe5\xf0\xe0\xeb\xfc\xed\xee\xec \xe2\xf0\xe5\xec\xe5\xed\xe8 \xe4\xeb\xff \xef\xee\xe8\xf1\xea\xe0 ID \xf7\xe0\xf9\xe5 \xf3\xe4\xee\xe1\xed\xe5\xe5")
+    imgui.Text(u8"\xf1\xec\xee\xf2\xf0\xe5\xf2\xfc \xf2\xe0\xe1\xeb\xe8\xf6\xfb \xe2\xfb\xf8\xe5 (\xc8\xf1\xf5. RPC, \xc2\xf5. RPC, \xe8 \xf2.\xe4.).")
+    imgui.Text(u8"\xc2 \xea\xe0\xe6\xe4\xee\xe9 \xf1\xf2\xf0\xee\xea\xe5 \xf1\xef\xe8\xf1\xea\xe0 ID \xf3\xe6\xe5 \xf3\xea\xe0\xe7\xe0\xed \xe2 \xf1\xea\xee\xe1\xea\xe0\xf5.")
+    imgui.Spacing()
+
+    -- \xe2\xfb\xe2\xee\xe4\xe8\xec \xef\xee\xf1\xeb\xe5\xe4\xed\xe8\xe5 \xef\xe5\xf0\xe5\xf5\xe2\xe0\xf7\xe5\xed\xed\xfb\xe5
+    local function showCaptured(label, tbl)
+        if imgui.CollapsingHeader(label) then
+            if #tbl == 0 then
+                imgui.TextDisabled(u8"\xd2\xe8\xf8\xe8\xed\xe0 — \xef\xe0\xea\xe5\xf2\xee\xe2 \xed\xe5 \xe1\xfb\xeb\xee.")
+            else
+                for _, entry in ipairs(tbl) do
+                    imgui.Text(string.format("ID: %d  |  %s", entry.id, entry.time))
+                end
+            end
+        end
+    end
+
+    showCaptured(u8"\xc8\xf1\xf5\xee\xe4\xff\xf9\xe8\xe5 RPC",     capturedIDs.rpc_out)
+    showCaptured(u8"\xc2\xf5\xee\xe4\xff\xf9\xe8\xe5 RPC",          capturedIDs.rpc_in)
+    showCaptured(u8"\xc8\xf1\xf5\xee\xe4\xff\xf9\xe8\xe5 \xef\xe0\xea\xe5\xf2\xfb", capturedIDs.pkt_out)
+    showCaptured(u8"\xc2\xf5\xee\xe4\xff\xf9\xe8\xe5 \xef\xe0\xea\xe5\xf2\xfb",      capturedIDs.pkt_in)
+end
+
+--=============================================================
+-- \xd0\xe5\xed\xe4\xe5\xf0 \xf1\xf2\xf0\xe0\xed\xe8\xf6\xfb \xed\xe0\xf1\xf2\xf0\xee\xe5\xea (\xef\xe0\xe3\xe5 9)
+--=============================================================
+
+local function renderSettings()
+    imgui.Text(u8"\xd2\xe5\xec\xe0 \xe8\xed\xf2\xe5\xf0\xf4\xe5\xe9\xf1\xe0")
+    imgui.Combo(u8"##style", config.style, config.style_combo, #style_list)
+    if imgui.IsItemDeactivatedAfterEdit() then
+        mainIni.config.style = config.style[0]
+        Style()
+        inicfg.save(mainIni,"raknet.ini")
+    end
+
+    imgui.Spacing()
+    imgui.Text(u8"\xd1\xf2\xe8\xeb\xfc \xf1\xea\xf0\xee\xeb\xeb\xee\xe2 / \xf3\xe3\xeb\xee\xe2")
+    imgui.Combo(u8"##twist", config.twist, config.twist_combo, #twist_list)
+    if imgui.IsItemDeactivatedAfterEdit() then
+        mainIni.config.twist = config.twist[0]
+        Style()
+        inicfg.save(mainIni,"raknet.ini")
+    end
+
+    imgui.Spacing()
+    imgui.Separator()
+    imgui.Text(u8"\xce\xef\xf6\xe8\xe8")
+
+    if imgui.ToggleButton(u8"\xd3\xe2\xe5\xe4\xee\xec\xeb\xe5\xed\xe8\xff", config.notifications) then
+        mainIni.config.notifications = config.notifications[0]
+        inicfg.save(mainIni,"raknet.ini")
+    end
+    if imgui.ToggleButton(u8"\xd0\xf3\xf1\xf1\xea\xe8\xe5 \xef\xee\xe4\xf1\xea\xe0\xe7\xea\xe8", config.hints) then
+        mainIni.config.hints = config.hints[0]
+        inicfg.save(mainIni,"raknet.ini")
+    end
+
+    imgui.Spacing()
+    imgui.Separator()
+    imgui.Text(u8"\xcb\xee\xe3\xe8\xf0\xee\xe2\xe0\xed\xe8\xe5 (raklog/raklog.txt)")
+
+    if imgui.ToggleButton(u8"\xc2\xea\xeb\xfe\xf7\xe8\xf2\xfc \xeb\xee\xe3\xe8", config.logs.actived) then
+        mainIni.config.logs = config.logs.actived[0]
+        inicfg.save(mainIni,"raknet.ini")
+    end
+    if config.logs.actived[0] then
+        if imgui.ToggleButton(u8"\xc8\xf1\xf5. RPC",     config.logs.outrpc)   then mainIni.config.logs_outrpc   =config.logs.outrpc[0];   inicfg.save(mainIni,"raknet.ini") end
+        if imgui.ToggleButton(u8"\xc2\xf5. RPC",          config.logs.inrpc)    then mainIni.config.logs_inrpc    =config.logs.inrpc[0];    inicfg.save(mainIni,"raknet.ini") end
+        if imgui.ToggleButton(u8"\xc8\xf1\xf5. \xef\xe0\xea\xe5\xf2\xfb",   config.logs.outpacket) then mainIni.config.logs_outpacket=config.logs.outpacket[0]; inicfg.save(mainIni,"raknet.ini") end
+        if imgui.ToggleButton(u8"\xc2\xf5. \xef\xe0\xea\xe5\xf2\xfb",        config.logs.inpacket)  then mainIni.config.logs_inpacket =config.logs.inpacket[0];  inicfg.save(mainIni,"raknet.ini") end
+        if imgui.ToggleButton(u8"\xd1\xf6\xe5\xed\xe0\xf0\xe8\xe8",          config.logs.scenario)  then mainIni.config.logs_scenario  =config.logs.scenario[0];  inicfg.save(mainIni,"raknet.ini") end
+        if imgui.ToggleButton(u8"\xce\xf7\xe8\xf1\xf2\xe8\xf2\xfc \xef\xf0\xe8 \xe2\xfb\xf5\xee\xe4\xe5", config.logs.quitGameClean) then
+            mainIni.config.logs_quitGameClean=config.logs.quitGameClean[0]; inicfg.save(mainIni,"raknet.ini")
+        end
+    end
+
+    imgui.Spacing()
+    imgui.Separator()
+    imgui.TextDisabled(u8"\xce\xf2\xea\xf0\xfb\xf2\xfc \xec\xe5\xed\xfe: \xea\xee\xec\xe0\xed\xe4\xe0 /rak \xe2 \xf7\xe0\xf2\xe5")
+end
+
+--=============================================================
+-- \xd0\xe5\xed\xe4\xe5\xf0 \xf1\xf6\xe5\xed\xe0\xf0\xe8\xe5\xe2
+--=============================================================
+
+local function renderScenarios()
+    local btnW = 180*MDS
+    imgui.SetCursorPosX((imgui.GetWindowWidth()-btnW)/2)
+    if imgui.Button(u8"\xcf\xf0\xe8 \xf1\xee\xe7\xe4\xe0\xf2\xfc \xf1\xf6\xe5\xed\xe0\xf0\xe8\xe9", imgui.ImVec2(btnW,28*MDS)) then
+        local n = #RakNet.scenarios+1
+        RakNet.scenarios[n] = {
+            name       = new.char[256](u8"\xd1\xf6\xe5\xed\xe0\xf0\xe8\xe9 "..n),
+            slots      = {},
+            play       = false,
+            loop       = false,
+            input_wait = new.int(0),
+            wait       = 0
+        }
+        if config.notifications[0] then
+            Notification(u8"\xd1\xf6\xe5\xed\xe0\xf0\xe8\xe9 "..n..u8" \xf1\xee\xe7\xe4\xe0\xed.", 4, ColorNotification())
+        end
+    end
+
+    imgui.Spacing()
+    imgui.Text(u8"\xcf\xee\xe8\xf1\xea:"); imgui.SameLine()
+    imgui.InputText("##SearchSc", config.search_scenarios, sizeof(config.search_scenarios))
+    imgui.Separator()
+
+    local q = str(config.search_scenarios)
+    for i, sc in ipairs(RakNet.scenarios) do
+        if sc and (q=="" or u8:decode(str(sc.name)):lower():find(q:lower())) then
+            local sel = imgui.Selectable(sc.name.."##sc"..i, RakNet.scenarios_selected==i)
+            if sel then RakNet.scenarios_selected=i end
+
+            if RakNet.scenarios_selected==i then
+                -- \xce\xef\xf6\xe8\xe8 \xf1\xf6\xe5\xed\xe0\xf0\xe8\xff
+                local btnLbl = sc.play and u8"\xce\xf1\xf2\xe0\xed\xee\xe2\xe8\xf2\xfc" or u8"\xc7\xe0\xef\xf3\xf1\xf2\xe8\xf2\xfc"
+                if imgui.Button(btnLbl.."##play"..i) then
+                    sc.play = not sc.play
+                    if config.notifications[0] then
+                        Notification(u8:decode(str(sc.name))..(sc.play and u8" \xe7\xe0\xef\xf3\xf9\xe5\xed." or u8" \xee\xf1\xf2\xe0\xed\xee\xe2\xeb\xe5\xed."), 4, ColorNotification())
+                    end
+                end
+                imgui.SameLine()
+                if imgui.Button(u8"\xd3\xe4\xe0\xeb\xe8\xf2\xfc##"..i) then
+                    if config.notifications[0] then
+                        Notification(u8:decode(str(sc.name))..u8" \xf3\xe4\xe0\xeb\xb8\xed.", 4, ColorNotification())
+                    end
+                    table.remove(RakNet.scenarios, i)
+                    RakNet.scenarios_selected = nil
+                end
+
+                if imgui.CollapsingHeader(u8"\xcd\xe0\xf1\xf2\xf0\xee\xe9\xea\xe8 \xf1\xf6\xe5\xed\xe0\xf0\xe8\xff##"..i) then
+                    imgui.InputText(u8"\xcd\xe0\xe7\xe2\xe0\xed\xe8\xe5", sc.name, sizeof(sc.name))
+                    if imgui.ToggleButton(u8"\xd6\xe8\xea\xeb", imgui.new.bool(sc.loop)) then sc.loop=not sc.loop end
+                    imgui.InputInt(u8"\xc7\xe0\xe4\xe5\xf0\xe6\xea\xe0 (\xec\xf1)", sc.input_wait, sizeof(sc.input_wait))
+                    if imgui.Button(u8"\xd1\xee\xf5\xf0\xe0\xed\xe8\xf2\xfc \xe7\xe0\xe4\xe5\xf0\xe6\xea\xf3") then
+                        sc.wait = sc.input_wait[0]
+                        if config.notifications[0] then
+                            Notification(u8"\xc7\xe0\xe4\xe5\xf0\xe6\xea\xe0: "..sc.wait..u8"\xec\xf1", 4, ColorNotification())
+                        end
+                    end
+                end
+
+                if #sc.slots>0 and imgui.CollapsingHeader(u8"\xd1\xee\xe4\xe5\xf0\xe6\xe8\xec\xee\xe5##"..i) then
+                    for j, slot in ipairs(sc.slots) do
+                        if imgui.Selectable(slot.name.." ##sl"..j, RakNet.scenarios_selected_slots==j) then
+                            RakNet.scenarios_selected_slots = j
+                        end
+                        if RakNet.scenarios_selected_slots==j then
+                            imgui.SameLine()
+                            if imgui.Button(u8"\xd3\xe4\xe0\xeb\xe8\xf2\xfc##sl"..j) then
+                                table.remove(sc.slots, j)
+                                RakNet.scenarios_selected_slots = nil
+                            end
+                        end
+                    end
+                end
+                imgui.Separator()
+            end
+        end
+    end
+end
+
+--=============================================================
+-- \xd0\xe5\xed\xe4\xe5\xf0 \xf5\xf3\xea\xee\xe2 \xe8 \xed\xee\xef\xee\xe2 (\xf5\xe5\xeb\xef\xe5\xf0)
+--=============================================================
+
+local function renderHookNopList(tbl, kind, selState, isHook, filterBS)
+    imgui.Text(u8"\xcf\xee\xe8\xf1\xea:"); imgui.SameLine()
+    imgui.InputText("##Search", config.search, sizeof(config.search))
+    imgui.SameLine()
+    local btnLabel = isHook and (showall and u8"\xd2\xee\xeb\xfc\xea\xee \xe0\xea\xf2\xe8\xe2\xed\xfb\xe5" or u8"\xd5\xf3\xea\xe8: \xe2\xf1\xe5")
+                              or (showall and u8"\xd2\xee\xeb\xfc\xea\xee \xe0\xea\xf2\xe8\xe2\xed\xfb\xe5" or u8"\xcd\xee\xef\xfb: \xe2\xf1\xe5")
+    if imgui.Button(btnLabel) then showall = not showall end
+    imgui.Separator()
+
+    local q    = searchStr()
+    local rows = filteredList(tbl, kind, q)
+    local field = isHook and "hook" or "nop"
+
+    for _, row in ipairs(rows) do
+        if (not filterBS or #getBitstream(row.entry)>0) and (not showall or row.entry[field]) then
+            local sel = imgui.Selectable("##hn"..row.info.name, selState==row.i, imgui.SelectableFlags.AllowDoubleClick)
+            imgui.SameLine(8*MDS)
+            if config.hints[0] then
+                imgui.TextQuestion(row.title, u8(row.entry.description))
+            else
+                imgui.Text(row.title)
+            end
+            if sel then selState = row.i end
+
+            if selState == row.i then
+                imgui.SameLine()
+                local cur = row.entry[field]
+                if imgui.ToggleButton("##tog"..row.info.name, imgui.new.bool(cur)) then
+                    row.entry[field] = not cur
+                    if config.notifications[0] then
+                        local st = row.entry[field] and u8"\xc2\xcb" or u8"\xce\xd4\xd4"
+                        Notification(row.title.." — "..(isHook and "HOOK" or "NOP").." ["..st.."]", 4, ColorNotification())
+                    end
+                end
+            end
+        end
+    end
+    return selState
+end
+
+--=============================================================
+-- \xd0\xe5\xed\xe4\xe5\xf0 \xef\xee\xe4\xf0\xee\xe1\xed\xee\xf1\xf2\xe9 \xef\xe0\xea\xe5\xf2\xe0 (bsActive)
+--=============================================================
+
+local function renderDetailPanel()
+    -- \xd5\xe5\xeb\xef\xe5\xf0: \xf7\xf2\xee\xe1\xfb \xed\xe5 \xf2\xf0\xe8\xe6\xe4\xfb \xed\xe5 \xef\xee\xe2\xf2\xee\xf0\xff\xf2\xfc\xf1\xff
+    local function header(title, desc)
+        imgui.SetCursorPosX((imgui.GetWindowWidth()-imgui.CalcTextSize(title).x)/2)
+        imgui.Text(title)
+        if desc and #desc>0 then
+            imgui.SetCursorPosX((imgui.GetWindowWidth()-imgui.CalcTextSize(u8(desc)).x)/2)
+            imgui.Text(u8(desc))
+        end
+        imgui.Separator()
+    end
+
+    local function actionButton(lbl, action)
+        local bw = 160*MDS
+        imgui.SetCursorPosX((imgui.GetWindowWidth()-bw)/2)
+        if imgui.Button(lbl, imgui.ImVec2(bw,26*MDS)) then
+            lua_thread.create(function()
+                config.mainWindow[0] = false; wait(0)
+                action()
+                config.mainWindow[0] = true;  wait(0)
+            end)
+        end
+    end
+
+    -- \xce\xf2\xef\xf0\xe0\xe2\xea\xe0 / \xfd\xec\xf3\xeb\xff\xf6\xe8\xff \xe4\xe0\xed\xed\xfb\xf5 \xe8\xe7 \xf1\xeb\xee\xf2\xee\xe2
+    local function collectAndSend(selState, tbl, kind, slots)
+        local cdata = {}
+        local bs_data = getBitstream(tbl[selState.selected])
+        for k,v in ipairs(bs_data) do
+            if slots[k] then cdata[#cdata+1] = { v.type, slots[k][3], v.name } end
+        end
+        emulData(tbl[selState.selected][1], kind, cdata)
+    end
+
+    local pg = config.page[0]
+
+    -- \xc8\xf1\xf5\xee\xe4\xff\xf9\xe8\xe9 \xef\xe0\xea\xe5\xf2 (\xee\xf2\xef\xf0\xe0\xe2\xe8\xf2\xfc)
+    if bsPage=="pkt_out" and pg==1 then
+        if not RakNet.send_packet.selected then bsActive=false; return end
+        local info = getInfo("pkt out", RakNet.send_packet.selected)
+        header(info.name.." ["..info.id.."]", OUTCOMING_PACKET[RakNet.send_packet.selected].description)
+        actionButton(u8"\xce\xf2\xef\xf0\xe0\xe2\xe8\xf2\xfc \xef\xe0\xea\xe5\xf2", function()
+            collectAndSend(RakNet.send_packet, OUTCOMING_PACKET, "pkt out", RakNet.send_packet.slots)
+            if config.notifications[0] then Notification(info.name..u8" \xee\xf2\xef\xf0\xe0\xe2\xeb\xe5\xed.", 4, ColorNotification()) end
+        end)
+        renderSlots(RakNet.send_packet.slots)
+
+    -- \xc2\xf5\xee\xe4\xff\xf9\xe8\xe9 \xef\xe0\xea\xe5\xf2 (\xfd\xec\xf3\xeb\xe8\xf0\xee\xe2\xe0\xf2\xfc)
+    elseif bsPage=="pkt_in" and pg==2 then
+        if not RakNet.emul_packet.selected then bsActive=false; return end
+        local info = getInfo("pkt in", RakNet.emul_packet.selected)
+        header(info.name.." ["..info.id.."]", INCOMING_PACKET[RakNet.emul_packet.selected].description)
+        actionButton(u8"\xdd\xec\xf3\xeb\xe8\xf0\xee\xe2\xe0\xf2\xfc \xef\xe0\xea\xe5\xf2", function()
+            collectAndSend(RakNet.emul_packet, INCOMING_PACKET, "pkt in", RakNet.emul_packet.slots)
+            if config.notifications[0] then Notification(info.name..u8" \xfd\xec\xf3\xeb\xe8\xf0\xee\xe2\xe0\xed.", 4, ColorNotification()) end
+        end)
+        renderSlots(RakNet.emul_packet.slots)
+
+    -- \xc8\xf1\xf5. RPC (\xee\xf2\xef\xf0\xe0\xe2\xe8\xf2\xfc)
+    elseif bsPage=="rpc_out" and pg==3 then
+        if not RakNet.send_rpc.selected then bsActive=false; return end
+        local info = getInfo("rpc out", RakNet.send_rpc.selected)
+        header(info.name.." ["..info.id.."]", OUTCOMING_RPC[RakNet.send_rpc.selected].description)
+        actionButton(u8"\xce\xf2\xef\xf0\xe0\xe2\xe8\xf2\xfc RPC", function()
+            collectAndSend(RakNet.send_rpc, OUTCOMING_RPC, "rpc out", RakNet.send_rpc.slots)
+            if config.notifications[0] then Notification(info.name..u8" \xee\xf2\xef\xf0\xe0\xe2\xeb\xe5\xed.", 4, ColorNotification()) end
+        end)
+        renderSlots(RakNet.send_rpc.slots)
+
+    -- \xc2\xf5. RPC (\xfd\xec\xf3\xeb\xe8\xf0\xee\xe2\xe0\xf2\xfc)
+    elseif bsPage=="rpc_in" and pg==4 then
+        if not RakNet.emul_rpc.selected then bsActive=false; return end
+        local info = getInfo("rpc in", RakNet.emul_rpc.selected)
+        header(info.name.." ["..info.id.."]", INCOMING_RPC[RakNet.emul_rpc.selected].description)
+        actionButton(u8"\xdd\xec\xf3\xeb\xe8\xf0\xee\xe2\xe0\xf2\xfc RPC", function()
+            collectAndSend(RakNet.emul_rpc, INCOMING_RPC, "rpc in", RakNet.emul_rpc.slots)
+            if config.notifications[0] then Notification(info.name..u8" \xfd\xec\xf3\xeb\xe8\xf0\xee\xe2\xe0\xed.", 4, ColorNotification()) end
+        end)
+        renderSlots(RakNet.emul_rpc.slots)
+
+    -- Hook \xee\xf2\xf0\xe0\xe6\xe0\xe5\xf2\xf1\xff \xef\xf0\xff\xec\xee \xe2 \xf1\xef\xe8\xf1\xea\xe5, \xe4\xe5\xf2\xe0\xeb\xfc\xed\xfb\xe9 \xef\xe0\xed\xe5\xeb\xfc \xed\xe5 \xe2\xfb\xe7\xfb\xe2\xe0\xe5\xf2\xf1\xff
+    else
+        bsActive = false
+    end
+end
+
+--=============================================================
+-- \xc3\xeb\xe0\xe2\xed\xee\xe5 \xee\xea\xed\xee
+--=============================================================
+
+local mainFrame = imgui.OnFrame(
+    function() return config.mainWindow[0] end,
+    function(player)
+        local sw, sh = getScreenResolution()
+        imgui.SetNextWindowPos(imgui.ImVec2(sw/2, sh/2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5,0.5))
+        imgui.SetNextWindowSize(imgui.ImVec2(780*MDS, 420*MDS), imgui.Cond.FirstUseEver)
+
+        imgui.Begin(u8"RakNet Changer##main", config.mainWindow,
+            imgui.WindowFlags.NoResize + imgui.WindowFlags.NoCollapse +
+            imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.AlwaysUseWindowPadding)
+
+        -- \xeb\xe5\xe2\xee\xe5 \xe1\xee\xea\xee\xe2\xee\xe5 \xec\xe5\xed\xfe
+        imgui.BeginGroup()
+            imgui.CustomMenu(MENU_LABELS, config.page, imgui.ImVec2(158*MDS, 38*MDS))
+        imgui.EndGroup()
+
+        imgui.SameLine(0, 10*MDS)
+
+        -- \xef\xf0\xe0\xe2\xe0\xff \xef\xe0\xed\xe5\xeb\xfc \xf1\xee\xe4\xe5\xf0\xe6\xe8\xec\xee\xe3\xee
+        imgui.PushStyleColor(imgui.Col.ChildBg, imgui.ImVec4(0.08,0.07,0.10,0.5))
+        imgui.BeginChild("##content", imgui.ImVec2(imgui.GetContentRegionAvail().x, 0), false,
+            imgui.WindowFlags.NoScrollbar)
+
+        if bsActive then
+            -- \xd2\xee\xef\xee\xe2\xe0\xff \xea\xed\xee\xef\xea\xe0 \xed\xe0\xe7\xe0\xe4
+            if imgui.Button(fa.ARROW_LEFT.." "..u8"\xd0\xe0\xe7\xe2\xb8\xf0\xed\xf3\xf2\xfc\xf1\xff") then
+                bsActive = false
+            end
+            imgui.Separator()
+            renderDetailPanel()
+        else
+            local pg = config.page[0]
+
+            if pg == 1 then
+                renderPacketList(OUTCOMING_PACKET,"pkt out", RakNet.send_packet, "pkt out", "pkt_out", false)
+
+            elseif pg == 2 then
+                renderPacketList(INCOMING_PACKET, "pkt in",  RakNet.emul_packet, "pkt in",  "pkt_in",  false)
+
+            elseif pg == 3 then
+                renderPacketList(OUTCOMING_RPC,   "rpc out", RakNet.send_rpc,    "rpc out", "rpc_out", false)
+
+            elseif pg == 4 then
+                renderPacketList(INCOMING_RPC,    "rpc in",  RakNet.emul_rpc,    "rpc in",  "rpc_in",  false)
+
+            elseif pg == 5 then
+                -- \xd5\xf3\xea\xe8
+                imgui.SetCursorPosX(40*MDS)
+                local function hookHeader(idx, lbl)
+                    local active = config.header.hook[idx][0]
+                    if imgui.HeaderButton(active, lbl) then
+                        for k=1,4 do config.header.hook[k][0] = (k==idx) end
+                    end
+                    if idx<4 then imgui.SameLine() end
+                end
+                hookHeader(1, header_name[1]); hookHeader(2, header_name[2])
+                hookHeader(3, header_name[3]); hookHeader(4, header_name[4])
+                imgui.Separator()
+
+                if     config.header.hook[1][0] then RakNet.hook.outrpc.selected   = renderHookNopList(OUTCOMING_RPC,   "rpc out", RakNet.hook.outrpc.selected,   true, true)
+                elseif config.header.hook[2][0] then RakNet.hook.inrpc.selected    = renderHookNopList(INCOMING_RPC,    "rpc in",  RakNet.hook.inrpc.selected,    true, true)
+                elseif config.header.hook[3][0] then RakNet.hook.outpacket.selected= renderHookNopList(OUTCOMING_PACKET,"pkt out", RakNet.hook.outpacket.selected, true, true)
+                elseif config.header.hook[4][0] then RakNet.hook.inpacket.selected = renderHookNopList(INCOMING_PACKET, "pkt in",  RakNet.hook.inpacket.selected,  true, true)
+                end
+
+            elseif pg == 6 then
+                -- \xcd\xee\xef\xfb
+                imgui.SetCursorPosX(40*MDS)
+                local function nopHeader(idx, lbl)
+                    local active = config.header.nop[idx][0]
+                    if imgui.HeaderButton(active, lbl) then
+                        for k=1,4 do config.header.nop[k][0] = (k==idx) end
+                    end
+                    if idx<4 then imgui.SameLine() end
+                end
+                nopHeader(1, header_name[1]); nopHeader(2, header_name[2])
+                nopHeader(3, header_name[3]); nopHeader(4, header_name[4])
+                imgui.Separator()
+
+                if     config.header.nop[1][0] then RakNet.nop.outrpc_selected    = renderHookNopList(OUTCOMING_RPC,   "rpc out", RakNet.nop.outrpc_selected,    false, false)
+                elseif config.header.nop[2][0] then RakNet.nop.inrpc_selected     = renderHookNopList(INCOMING_RPC,    "rpc in",  RakNet.nop.inrpc_selected,     false, false)
+                elseif config.header.nop[3][0] then RakNet.nop.outpacket_selected = renderHookNopList(OUTCOMING_PACKET,"pkt out", RakNet.nop.outpacket_selected,  false, false)
+                elseif config.header.nop[4][0] then RakNet.nop.inpacket_selected  = renderHookNopList(INCOMING_PACKET, "pkt in",  RakNet.nop.inpacket_selected,   false, false)
+                end
+
+            elseif pg == 7 then
+                renderScenarios()
+
+            elseif pg == 8 then
+                renderIDMonitor()
+
+            elseif pg == 9 then
+                renderSettings()
+            end
+        end
+
+        imgui.EndChild()
+        imgui.PopStyleColor()
+        imgui.End()
+    end
+)
+
+--=============================================================
+-- \xcd\xee\xf2\xe8\xf4\xe8\xea\xe0\xf6\xe8\xe8
+--=============================================================
+
+local notifFrame = imgui.OnFrame(
+    function() return #list > 0 end,
+    function(player)
+        player.HideCursor = true
+        local rw, rh = getScreenResolution()
+        imgui.SetNextWindowPos(imgui.ImVec2(0,0), imgui.Cond.FirstUseEver, imgui.ImVec2(0,0))
+        imgui.SetNextWindowSize(imgui.ImVec2(0,0), imgui.Cond.FirstUseEver)
+        imgui.Begin("##ntf", nil,
+            imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoTitleBar +
+            imgui.WindowFlags.NoResize + imgui.WindowFlags.NoMove + imgui.WindowFlags.NoBackground)
+        imgui.SetWindowPosVec2(imgui.ImVec2(rw-10-imgui.GetWindowSize().x, rh-210))
+
+        for k, data in ipairs(list) do
+            local ts   = imgui.CalcTextSize(data.text)
+            local size = imgui.ImVec2(15+ts.x+5, 5+ts.y+5)
+            local ww   = imgui.GetWindowSize()
+            if ww.x > size.x+20 then imgui.SetCursorPosX(ww.x-size.x-8) end
+            imgui.PushStyleVarFloat(imgui.StyleVar.Alpha, data.alpha)
+            imgui.PushStyleVarFloat(imgui.StyleVar.ChildRounding, 5)
+            imgui.PushStyleColor(imgui.Col.ChildBg, tableToImVec(data.colors.back))
+            imgui.PushStyleColor(imgui.Col.Border,  tableToImVec(data.colors.border))
+            imgui.BeginChild("ntf"..k, size, true, imgui.WindowFlags.NoScrollbar + imgui.WindowFlags.NoScrollWithMouse)
+            imgui.PushStyleColor(imgui.Col.Text, tableToImVec(data.colors.text))
+            imgui.SetCursorPos(imgui.ImVec2(10, size.y/2-ts.y/2))
+            imgui.Text(data.text)
+            imgui.EndChild()
+            imgui.PopStyleColor(3)
+            imgui.PopStyleVar(2)
+        end
+        imgui.End()
+    end
+)
+
+--=============================================================
+-- \xc8\xed\xe8\xf6\xe8\xe0\xeb\xe8\xe7\xe0\xf6\xe8\xff ImGui
+--=============================================================
+
+imgui.OnInitialize(function()
+    imgui.GetIO().IniFilename = nil
+    imgui.GetStyle():ScaleAllSizes(MDS)
+    fa.Init(14*MDS)
+    Style()
+end)
+
+--=============================================================
+-- \xd5\xf3\xea\xe8 RakLua
+--=============================================================
+
+local function writeBsField(bs, t, val)
+    if     t:find("float")  then bs:writeFloat(val[0])
+    elseif t:find("uint8")  then bs:writeUInt8(val[0])
+    elseif t:find("uint16") then bs:writeUInt16(val[0])
+    elseif t:find("uint32") then bs:writeUInt32(val[0])
+    elseif t:find("int8")   then bs:writeInt8(val[0])
+    elseif t:find("int16")  then bs:writeInt16(val[0])
+    elseif t:find("int32")  then bs:writeInt32(val[0])
+    elseif t:find("string") then
+        local s = u8:decode(str(val))
+        if t:find("8") then bs:writeUInt8(#s) else bs:writeUInt32(#s) end
+        bs:writeString(s)
+    elseif t:find("encoded") then bs:writeEncoded(u8:decode(str(val)))
+    elseif t:find("bool")   then bs:writeBool(val[0])
+    end
+end
+
+local function applyHook(bs, hookSlots, bsData)
+    bs:resetWritePointer()
+    for i=1,#bsData do
+        if hookSlots[i] then writeBsField(bs, bsData[i].type, hookSlots[i][3]) end
+    end
+end
+
+-- \xc8\xf1\xf5. RPC
+RakLua.registerHandler(RakLuaEvents.OUTGOING_RPC, function(id,bs,p,r,o,s)
+    -- \xef\xee\xe8\xf1\xea /rak \xe2 \xf0\xf3\xf7\xed\xee\xe9 \xea\xee\xec\xe0\xed\xe4\xe5
+    if id==50 then
+        local ok2, len = pcall(function() return bs:readUInt32() end)
+        if ok2 then
+            local ok3, cmd = pcall(function() return bs:readString(len) end)
+            if ok3 and cmd=="/rak" then config.mainWindow[0]=not config.mainWindow[0]; return false end
+        end
+    end
+
+    -- \xef\xe5\xf0\xe5\xf5\xe2\xe0\xf2 ID
+    if capturingEnabled[0] then
+        capturedIDs.rpc_out[#capturedIDs.rpc_out+1] = { id=id, time=getTime() }
+        if #capturedIDs.rpc_out > 50 then table.remove(capturedIDs.rpc_out,1) end
+    end
+
+    for _,v in ipairs(OUTCOMING_RPC) do
+        if id==v[1] then
+            if v.nop then return false end
+            if v.hook and RakNet.hook.outrpc.selected then
+                local data = getBitstream(OUTCOMING_RPC[RakNet.hook.outrpc.selected])
+                applyHook(bs, RakNet.hook.outrpc.slots, data)
+                return {id,bs,p,r,o,s}
+            end
+        end
+    end
+end)
+
+-- \xc2\xf5. RPC
+RakLua.registerHandler(RakLuaEvents.INCOMING_RPC, function(id,bs)
+    if capturingEnabled[0] then
+        capturedIDs.rpc_in[#capturedIDs.rpc_in+1] = { id=id, time=getTime() }
+        if #capturedIDs.rpc_in > 50 then table.remove(capturedIDs.rpc_in,1) end
+    end
+    for _,v in ipairs(INCOMING_RPC) do
+        if id==v[1] then
+            if v.nop then return false end
+            if v.hook and RakNet.hook.inrpc.selected then
+                local data = getBitstream(INCOMING_RPC[RakNet.hook.inrpc.selected])
+                applyHook(bs, RakNet.hook.inrpc.slots, data)
+                return {id,bs}
+            end
+        end
+    end
+end)
+
+-- \xc8\xf1\xf5. \xef\xe0\xea\xe5\xf2
+RakLua.registerHandler(RakLuaEvents.OUTGOING_PACKET, function(id,bs,p,r,o,s)
+    if capturingEnabled[0] then
+        capturedIDs.pkt_out[#capturedIDs.pkt_out+1] = { id=id, time=getTime() }
+        if #capturedIDs.pkt_out > 50 then table.remove(capturedIDs.pkt_out,1) end
+    end
+    for _,v in ipairs(OUTCOMING_PACKET) do
+        if id==v[1] then
+            if v.nop then return false end
+            if v.hook and RakNet.hook.outpacket.selected then
+                local data = getBitstream(OUTCOMING_PACKET[RakNet.hook.outpacket.selected])
+                applyHook(bs, RakNet.hook.outpacket.slots, data)
+                return {id,bs,p,r,o,s}
+            end
+        end
+    end
+end)
+
+-- \xc2\xf5. \xef\xe0\xea\xe5\xf2
+RakLua.registerHandler(RakLuaEvents.INCOMING_PACKET, function(id,bs)
+    if capturingEnabled[0] then
+        capturedIDs.pkt_in[#capturedIDs.pkt_in+1] = { id=id, time=getTime() }
+        if #capturedIDs.pkt_in > 50 then table.remove(capturedIDs.pkt_in,1) end
+    end
+    for _,v in ipairs(INCOMING_PACKET) do
+        if id==v[1] then
+            if v.nop then return false end
+            if v.hook and RakNet.hook.inpacket.selected then
+                local data = getBitstream(INCOMING_PACKET[RakNet.hook.inpacket.selected])
+                applyHook(bs, RakNet.hook.inpacket.slots, data)
+                return {id,bs}
+            end
+        end
+    end
+end)
+
+--=============================================================
+-- \xce\xf1\xed\xee\xe2\xed\xee\xe9 \xf6\xe8\xea\xeb
+--=============================================================
+
+function onScriptTerminate(scr, quitGame)
+    if quitGame and config.logs.quitGameClean[0] then
+        local f = io.open("raklog/raklog.txt","w+"); f:close()
+    end
+end
+
+function main()
+    while RakLua.getSampVersion()==nil do wait(0) end
+
+    sampRegisterChatCommand("rak", function()
+        config.mainWindow[0] = not config.mainWindow[0]
+    end)
+
+    sampAddChatMessage("\xd0\xe0\xea\xcd\xe5\xf2 \xc7\xe0\xec\xe5\xed\xf8\xe8\xea \xe7\xe0\xe3\xf0\xf3\xe6\xe5\xed. \xce\xf2\xea\xf0\xfb\xf2\xfc: /rak", -1)
+
+    while true do
+        wait(0)
+
+        -- \xdd\xf4\xf4\xe5\xea\xf2 \xfd\xef\xe5\xf0\xe5\xf5\xee\xe4\xe0 \xed\xee\xf2\xe8\xf4\xe8\xea\xe0\xf6\xe8\xe9
+        for k=#list,1,-1 do
+            local d = list[k]
+            if d then
+                if d.alpha==nil then list[k].alpha=0 end
+                local dt = os.clock()-d.start
+                if dt < 0.5 then
+                    list[k].alpha = bringFloatTo(0, 1, d.start, 0.5)
+                elseif d.time-0.5 < dt then
+                    list[k].alpha = bringFloatTo(1, 0, d.start+d.time-0.5, 0.5)
+                end
+                if dt > d.time then table.remove(list,k) end
+            end
+        end
+
+        -- \xc2\xee\xf1\xef\xf0\xee\xe8\xe7\xe2\xe5\xe4\xe5\xed\xe8\xe5 \xf1\xf6\xe5\xed\xe0\xf0\xe8\xe5\xe2
+        for _, sc in ipairs(RakNet.scenarios) do
+            if sc.play then
+                for _, slot in ipairs(sc.slots) do
+                    emulData(slot.id, slot.type, slot.data, true)
+                end
+                if sc.loop then
+                    wait(sc.wait)
+                else
+                    sc.play = false
+                end
+            end
+        end
+    end
+end

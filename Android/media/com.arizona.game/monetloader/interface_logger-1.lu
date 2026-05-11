@@ -1,0 +1,76 @@
+script_name('InterfaceLogger')
+script_author('fixed by Victor Strand')
+script_version('1.3')
+
+local enabled = false
+
+local function msg(text)
+    sampAddChatMessage('{D2691E}[IL] {ffffff}'..text, -1)
+    local dir = getWorkingDirectory()..'/bs'
+    if doesDirectoryExist(dir) then
+        local f = io.open(dir..'/events.txt', 'a')
+        if f then f:write('['..os.date('%H:%M:%S')..'] '..text..'\n'); f:close() end
+    end
+end
+
+function main()
+    while not isSampAvailable() do wait(100) end
+
+    sampRegisterChatCommand('il', function()
+        enabled = not enabled
+        sampAddChatMessage('{D2691E}[IL] {ffffff}'
+            ..(enabled and '\xc2\xea\xeb\xfe\xf7\xe5\xed\xee' or '\xc2\xfb\xea\xeb\xfe\xf7\xe5\xed\xee'), -1)
+    end)
+    sampAddChatMessage('{D2691E}[IL] {ffffff}\xc7\xe0\xe3\xf0\xf3\xe6\xe5\xed. /il', -1)
+
+    addEventHandler('onReceivePacket', function(pid, bs)
+        if pid ~= 220 or not enabled then return end
+        -- SetReadOffset чтобы не мешать другим скриптам которые тоже читают этот bs
+        raknetBitStreamSetReadOffset(bs, 0)
+        local b0 = raknetBitStreamReadInt8(bs)
+        local b1 = raknetBitStreamReadInt8(bs)
+
+        if b1 == 84 then
+            local iid   = raknetBitStreamReadInt8(bs)
+            local subid = raknetBitStreamReadInt8(bs)
+            local ok_l, len = pcall(raknetBitStreamReadInt32, bs)
+            if not ok_l then msg('FM iid='..iid..' sub='..subid..' (no len)'); return end
+            msg('FM iid='..iid..' sub='..subid..' len='..len)
+            if len > 0 and len < 4096 then
+                local ok_s, json = pcall(raknetBitStreamReadString, bs, len)
+                if ok_s and json then msg('JSON: '..json:sub(1,200)) end
+            end
+        elseif b1 == 62 then
+            local iid = raknetBitStreamReadInt8(bs)
+            local ok_b, st = pcall(raknetBitStreamReadBool, bs)
+            msg('TOGGLE iid='..iid..(ok_b and (' = '..(st and 'ON' or 'OFF')) or ''))
+        end
+        -- Не возвращаем false — другие обработчики продолжают работать
+    end)
+
+    addEventHandler('onSendPacket', function(pid, bs)
+        if pid ~= 220 or not enabled then return end
+        raknetBitStreamSetReadOffset(bs, 0)
+        local b0 = raknetBitStreamReadInt8(bs)
+        local b1 = raknetBitStreamReadInt8(bs)
+
+        if b1 == 63 then
+            local iid   = raknetBitStreamReadInt8(bs)
+            local bid   = raknetBitStreamReadInt32(bs)
+            local subid = raknetBitStreamReadInt32(bs)
+            local ok_l, len = pcall(raknetBitStreamReadInt32, bs)
+            if not ok_l then msg('CLICK iid='..iid..' id='..bid..' sub='..subid); return end
+            msg('CLICK iid='..iid..' id='..bid..' sub='..subid..' len='..len)
+            if len > 0 and len < 4096 then
+                local ok_s, data = pcall(raknetBitStreamReadString, bs, len)
+                if ok_s and data and #data > 0 then msg('DATA: '..data:sub(1,200)) end
+            end
+        elseif b1 == 66 then
+            local iid = raknetBitStreamReadInt8(bs)
+            local ok_b, st = pcall(raknetBitStreamReadBool, bs)
+            msg('STATE iid='..iid..(ok_b and (' = '..(st and 'ON' or 'OFF')) or ''))
+        end
+    end)
+
+    while true do wait(0) end
+end
