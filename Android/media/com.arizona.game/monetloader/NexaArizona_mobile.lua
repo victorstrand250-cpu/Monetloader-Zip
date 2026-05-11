@@ -9,6 +9,7 @@ local encoding = require("encoding")
 local requests = require("requests")
 local ffi      = require("ffi")
 local inicfg   = require("inicfg")
+local hook     = require("monethook")
 
 -- Source file is UTF-8 on Android; u8() must be a no-op (no re-encoding needed)
 local u8  = function(s) return s end
@@ -20,8 +21,22 @@ local gta = ffi.load("GTASA")
 ffi.cdef[[
     void _Z12AND_OpenLinkPKc(const char* link);
     void* _ZN4CPad6GetPadEi(int num);
+    uint8_t _ZN4CPad9GetSprintEi(void* thiz, int playerid);
 ]]
 local function openLink(url) pcall(gta._Z12AND_OpenLinkPKc, url) end
+
+-- Sprint hook (same technique as st_fera-3.lua)
+local sprintActive = false
+local _sprintHookOrig
+local function _sprintHookFn(thiz, playerid)
+    if playerid == 0 and sprintActive then return 1 end
+    return _sprintHookOrig(thiz, playerid)
+end
+_sprintHookOrig = hook.new(
+    'uint8_t(*)(void*, int)',
+    _sprintHookFn,
+    ffi.cast('uintptr_t', ffi.cast('void*', gta._ZN4CPad9GetSprintEi))
+)
 
 local CFG_FILE = "NexaArizona_mobile"
 local VERSION  = "1.5.5"
@@ -440,7 +455,8 @@ end
 -- Movement
 -- --------------------------------------------------------------------------
 local function stopMovingKeys()
-    setGameKeyState(1,0); setGameKeyState(16,0); setGameKeyState(0,0)
+    setGameKeyState(1,0); setGameKeyState(0,0)
+    sprintActive = false
     farmState.sync_enabled = false
 end
 
@@ -450,7 +466,8 @@ function resetNavPath()
     navState.last_check = 0; navState.stuck_ticks = 0; navState.last_stuck_action = 0
     farmState.active = false; farmState.target_x = nil
     farmState.target_y = nil; farmState.target_z = nil
-    setGameKeyState(1,0); setGameKeyState(16,0); setGameKeyState(0,0)
+    setGameKeyState(1,0); setGameKeyState(0,0)
+    sprintActive = false
     collectgarbage("step",50)
 end
 
@@ -496,19 +513,18 @@ local function runToPoint(tx,ty,tz)
 
     local d = dist3d(px,py,pz,tx,ty,tz)
 
-    -- On mobile, directly set character heading toward target instead of
-    -- camera manipulation (setCameraPositionUnfixed is unreliable on Android).
-    -- GTA SA heading: 0=North(+Y), 90=East(+X), clockwise.
-    local angle = math.deg(math.atan2(tx-px, ty-py)) % 360
-    setCharHeading(PLAYER_PED, angle)
-
-    setGameKeyState(1,-255)  -- forward
-    if d>5 and farm.real_run[0] then
-        setGameKeyState(16,255)  -- sprint
-    else
-        setGameKeyState(16,0)
+    -- Camera-based direction: exact same technique as st_fera-3.lua
+    local toAng = getHeadingFromVector2d(tx - px, ty - py)
+    local diff  = math.abs(toAng - navState.cam_angle)
+    if diff > 180 then diff = 360 - diff end
+    if diff > 3 then
+        pcall(setCameraPositionUnfixed, 0, math.rad(toAng - 90))
+        navState.cam_angle = toAng
     end
-    setGameKeyState(0, 0)  -- no steering key needed; heading is set directly
+
+    setGameKeyState(1, -255)  -- forward
+    sprintActive = d > 5 and farm.real_run[0]  -- sprint via CPad hook
+    setGameKeyState(0, 0)
 end
 
 -- --------------------------------------------------------------------------
@@ -812,7 +828,8 @@ end
 function emergency_stop()
     farmState.active=false; farmState.sync_enabled=false; farmState.locked_target=nil
     collectState.active=false; roamState.active=false
-    setGameKeyState(1,0); setGameKeyState(16,0); setGameKeyState(21,0)
+    setGameKeyState(1,0); setGameKeyState(21,0)
+    sprintActive = false
     resetNavPath()
     add_log("{FF3333}[Система] Аварийная остановка.")
 end
