@@ -10,8 +10,8 @@ local requests = require("requests")
 local ffi      = require("ffi")
 local inicfg   = require("inicfg")
 
-encoding.default = "CP1251"
-local u8  = encoding.UTF8
+-- Source file is UTF-8 on Android; u8() must be a no-op (no re-encoding needed)
+local u8  = function(s) return s end
 local MDS = MONET_DPI_SCALE or 1
 local new = imgui.new
 
@@ -495,22 +495,20 @@ local function runToPoint(tx,ty,tz)
     end
 
     local d = dist3d(px,py,pz,tx,ty,tz)
-    local diff = ((math.deg(math.atan2(ty-py,tx-px))-navState.cam_angle+180)%360)-180
-    navState.cam_angle = (navState.cam_angle + diff*(d<10 and 0.18 or 0.08)+360)%360
 
-    -- Point camera
-    local cx,cy,_ = getActiveCameraCoordinates()
-    setCameraPositionUnfixed(0, -math.atan2(
-        (py+math.sin(math.rad(navState.cam_angle))*10)-cy,
-        -((px+math.cos(math.rad(navState.cam_angle))*10)-cx)))
+    -- On mobile, directly set character heading toward target instead of
+    -- camera manipulation (setCameraPositionUnfixed is unreliable on Android).
+    -- GTA SA heading: 0=North(+Y), 90=East(+X), clockwise.
+    local angle = math.deg(math.atan2(tx-px, ty-py)) % 360
+    setCharHeading(PLAYER_PED, angle)
 
-    setGameKeyState(1,-255)
+    setGameKeyState(1,-255)  -- forward
     if d>5 and farm.real_run[0] then
-        setGameKeyState(16,255)
+        setGameKeyState(16,255)  -- sprint
     else
         setGameKeyState(16,0)
     end
-    setGameKeyState(0, calcObstacleTurn())
+    setGameKeyState(0, 0)  -- no steering key needed; heading is set directly
 end
 
 -- --------------------------------------------------------------------------
