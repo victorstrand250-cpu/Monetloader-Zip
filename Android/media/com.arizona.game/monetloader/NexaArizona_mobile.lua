@@ -535,8 +535,9 @@ local function busyByOtherPlayer(bx,by,bz)
     for pid=0,1000 do
         local ok,conn = pcall(sampIsPlayerConnected,pid)
         if ok and conn and pid~=my.id then
-            local ok2,ped2 = pcall(sampGetCharHandleBySampPlayerId,pid)
-            if ok2 and ped2 then
+            -- sampGetCharHandleBySampPlayerId returns (bool, ped) in Monetloader
+            local ok2, res2, ped2 = pcall(sampGetCharHandleBySampPlayerId, pid)
+            if ok2 and res2 and type(ped2) == "number" then
                 local ox,oy,oz = getCharCoordinates(ped2)
                 if dist3d(ox,oy,oz,bx,by,bz)<2.5 then return true end
             end
@@ -1483,8 +1484,14 @@ function main()
     end
     my.ped=ped; PLAYER_PED=ped
 
-    local ok2,pid=pcall(sampGetPlayerIdByCharHandle,my.ped)
-    if ok2 then
+    -- sampGetPlayerIdByCharHandle returns (bool, id) in Monetloader
+    local ok2, res, pid = pcall(sampGetPlayerIdByCharHandle, my.ped)
+    if not ok2 or not res then
+        -- fallback: try sampGetLocalPlayerId
+        local ok3, lid = pcall(sampGetLocalPlayerId)
+        if ok3 and type(lid) == "number" then pid = lid end
+    end
+    if type(pid) == "number" then
         my.id=pid; my.nick=sampGetPlayerNickname(pid) or ""; myPlayerId=pid; myNick=my.nick
     end
 
