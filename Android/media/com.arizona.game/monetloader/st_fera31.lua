@@ -516,9 +516,7 @@ local function applyTheme()
     st.FramePadding      = imgui.ImVec2(10*MDS,6*MDS)
 end
 
-local fMain  = nil
-local fBig   = nil
-local fSmall = nil
+local _fnt = { main = nil, big = nil, small = nil }
 local faR    = require('fAwesome6')
 local fa     = require('fAwesome6_solid')
 
@@ -529,9 +527,9 @@ imgui.OnInitialize(function()
     imgui.GetStyle():ScaleAllSizes(MDS)
     local ranges = io.Fonts:GetGlyphRangesCyrillic()
     local ttf    = getWorkingDirectory()..'/../trebucbd.ttf'
-    fMain  = io.Fonts:AddFontFromFileTTF(ttf, 15*MDS, nil, ranges)
-    fBig   = io.Fonts:AddFontFromFileTTF(ttf, 21*MDS, nil, ranges)
-    fSmall = io.Fonts:AddFontFromFileTTF(ttf, 13*MDS, nil, ranges)
+    _fnt.main  = io.Fonts:AddFontFromFileTTF(ttf, 15*MDS, nil, ranges)
+    _fnt.big   = io.Fonts:AddFontFromFileTTF(ttf, 21*MDS, nil, ranges)
+    _fnt.small = io.Fonts:AddFontFromFileTTF(ttf, 13*MDS, nil, ranges)
     local cfg2 = imgui.ImFontConfig()
     cfg2.MergeMode  = true
     cfg2.PixelSnapH = true
@@ -1434,12 +1432,14 @@ local WinStats  = imgui.new.bool(false)
 local WinFab    = imgui.new.bool(true)
 local curPage   = 1
 
-local tgChatBuf = imgui.new.char[64]('')
-local calcCot   = imgui.new.float[1](0)
-local calcLin   = imgui.new.float[1](0)
-local calcRar   = imgui.new.float[1](0)
-local calcWat   = imgui.new.float[1](0)
-local timerBuf  = imgui.new.int[1](0)
+local _buf = {
+    tgChat  = imgui.new.char[64](''),
+    cot     = imgui.new.float[1](0),
+    lin     = imgui.new.float[1](0),
+    rar     = imgui.new.float[1](0),
+    wat     = imgui.new.float[1](0),
+    timer   = imgui.new.int[1](0),
+}
 
 local TAB_ICONS = {
     fa['HOUSE'],
@@ -1478,7 +1478,7 @@ imgui.OnFrame(
         DL:AddRectFilled(imgui.ImVec2(WP.x, WP.y), imgui.ImVec2(WP.x+W, WP.y+3*MDS), u32(CLR.accent))
         DL:AddRect(imgui.ImVec2(WP.x, WP.y), imgui.ImVec2(WP.x+W, WP.y+H), u32(CLR.border), 12*MDS, 0, 1.2)
 
-        local pm = pF(fMain)
+        local pm = pF(_fnt.main)
         local pad = 14*MDS
 
         imgui.SetCursorPos(imgui.ImVec2(pad, 12*MDS))
@@ -1556,7 +1556,7 @@ imgui.OnFrame(
 
         local DL  = imgui.GetWindowDrawList()
         local WP  = imgui.GetWindowPos()
-        local pm  = pF(fMain)
+        local pm  = pF(_fnt.main)
         local rnd = 8*MDS
 
         local isRun = farm.running
@@ -1601,7 +1601,7 @@ imgui.OnFrame(
 
         local icon = isRun and fa['STOP'] or fa['PLAY']
         local lbl  = isRun and (icon..' '..u8'\xd1\xd2\xce\xcf') or (icon..' '..u8'\xd1\xd2\xc0\xd0\xd2')
-        local pB   = pF(fMain)
+        local pB   = pF(_fnt.main)
         local ts   = imgui.CalcTextSize(lbl)
         DL:AddText(imgui.ImVec2(WP.x+(bw-ts.x)*0.5, WP.y+(bh-ts.y)*0.5), u32(txtC), lbl)
         pFpop(pB)
@@ -1659,7 +1659,7 @@ imgui.OnFrame(
         local DL = imgui.GetWindowDrawList()
         local WP = imgui.GetWindowPos()
         _mainWinPos = WP
-        local pm = pF(fMain)
+        local pm = pF(_fnt.main)
         local WND_RND = 0
 
         local CORNERS_ALL    = 0xF
@@ -1696,7 +1696,7 @@ imgui.OnFrame(
             u32(CLR.border), 1)
 
         local titleX = WP.x + 14*MDS
-        local pB1 = pF(fBig)
+        local pB1 = pF(_fnt.big)
         local strandS  = 'STRAND'
         local fermaS   = ' FERMA'
         local strandSz = imgui.CalcTextSize(strandS)
@@ -1774,7 +1774,7 @@ imgui.OnFrame(
                 DL:AddRectFilled(imgui.ImVec2(tx2+3*MDS, ty2), imgui.ImVec2(tx2+tabW-3*MDS, ty2+tabH2),
                     u32(imgui.ImVec4(1,1,1,0.08)), 4*MDS)
             end
-            local pSm = pF(fSmall)
+            local pSm = pF(_fnt.small)
             local tS3 = imgui.CalcTextSize(lbl)
             DL:AddText(
                 imgui.ImVec2(tx2 + (tabW - tS3.x)*0.5, ty2 + (tabH2 - tS3.y)*0.5),
@@ -1924,7 +1924,7 @@ imgui.OnFrame(
                     u32(over_ and bgHov or bgBtn), rnd_)
                 DL:AddRect(imgui.ImVec2(cntX,cy), imgui.ImVec2(cntX+btnW,cy+btnH),
                     u32(brdBtn), rnd_, 0, 1.2)
-                local pBig = pF(fBig)
+                local pBig = pF(_fnt.big)
                 local tsBtn = imgui.CalcTextSize(lblBtn)
                 DL:AddText(imgui.ImVec2(cntX+(btnW-tsBtn.x)*0.5, cy+(btnH-tsBtn.y)*0.5),
                     u32(txtColBtn), lblBtn)
@@ -1961,7 +1961,7 @@ imgui.OnFrame(
                 fa['PAPER_PLANE'], CLR.text, rnd_) then
                 openLink('https://t.me/strand_scripts')
             end
-            local pSm2 = pF(fSmall)
+            local pSm2 = pF(_fnt.small)
             local chlbl = u8'\xca\xe0\xed\xe0\xeb'
             local chlS  = imgui.CalcTextSize(chlbl)
             DL:AddText(imgui.ImVec2(tgX1+(tgW-chlS.x)*0.5, cy+btnH+1*MDS), u32(CLR.textDim), chlbl)
@@ -2209,20 +2209,20 @@ imgui.OnFrame(
 
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.SetNextItemWidth(cntW)
-            if imgui.InputText('##cid', tgChatBuf, 64, imgui.InputTextFlags.Password) then
-                local s   = ffi.string(tgChatBuf)
+            if imgui.InputText('##cid', _buf.tgChat, 64, imgui.InputTextFlags.Password) then
+                local s   = ffi.string(_buf.tgChat)
                 local z   = s:find('\0')
                 local raw = (z and s:sub(1,z-1) or s):match('^%s*(.-)%s*$'):gsub('[^%d%-]','')
                 tg.chat_id = raw
-                ffi.fill(tgChatBuf, 64, 0)
-                for i = 0, #raw-1 do tgChatBuf[i] = string.byte(raw,i+1) end
+                ffi.fill(_buf.tgChat, 64, 0)
+                for i = 0, #raw-1 do _buf.tgChat[i] = string.byte(raw,i+1) end
             end
             imgui.Dummy(imgui.ImVec2(cntW, 28*MDS))
             cy = cy + 28*MDS + 10*MDS
 
             if dlBtn(DL, cntX, cy, cntW, 36*MDS, CLR.green, CLR.greenH,
                 fa['FLOPPY_DISK']..' '..u8'\xd1\xee\xf5\xf0\xe0\xed\xe8\xf2\xfc + \xf2\xe5\xf1\xf2', CLR.text, 4*MDS) then
-                local s = ffi.string(tgChatBuf)
+                local s = ffi.string(_buf.tgChat)
                 local z = s:find('\0'); tg.chat_id = z and s:sub(1,z-1) or s
                 saveCfg()
                 if tg.enabled then
@@ -2253,7 +2253,7 @@ imgui.OnFrame(
                 u8'\xd2\xea\xe0\xed\xfc:',
                 u8'\xc2\xee\xe4\xe0:',
             }
-            local bufs   = { calcCot, calcLin, calcRar, calcWat }
+            local bufs   = { _buf.cot, _buf.lin, _buf.rar, _buf.wat }
             local fields = { 'price_cotton','price_linen','price_rare','price_water' }
             local fcolors = {
                 imgui.ImVec4(0.95,0.88,0.55,1),
@@ -2287,9 +2287,9 @@ imgui.OnFrame(
             local inpY = cy + (rh3 - 22*MDS)*0.5
             imgui.SetCursorPos(imgui.ImVec2(inpX - WP.x, inpY - WP.y))
             imgui.SetNextItemWidth(inpW)
-            if imgui.InputInt('##btimer', timerBuf, 1, 10) then
-                if timerBuf[0] < 0 then timerBuf[0] = 0 end
-                botTimerMinutes = timerBuf[0]
+            if imgui.InputInt('##btimer', _buf.timer, 1, 10) then
+                if _buf.timer[0] < 0 then _buf.timer[0] = 0 end
+                botTimerMinutes = _buf.timer[0]
             end
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, rh3))
@@ -2315,7 +2315,7 @@ imgui.OnFrame(
                 imgui.ImVec4(0.20,0.05,0.05,1), imgui.ImVec4(0.40,0.09,0.09,1),
                 fa['ROTATE_LEFT']..' '..u8'\xd1\xe1\xf0\xee\xf1', CLR.red, 4*MDS) then
                 calc.price_cotton=0; calc.price_linen=0; calc.price_rare=0; calc.price_water=0
-                calcCot[0]=0; calcLin[0]=0; calcRar[0]=0; calcWat[0]=0
+                _buf.cot[0]=0; _buf.lin[0]=0; _buf.rar[0]=0; _buf.wat[0]=0
                 saveCfg()
             end
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
@@ -2388,7 +2388,7 @@ imgui.OnFrame(
 
         local DL  = imgui.GetWindowDrawList()
         local WP  = imgui.GetWindowPos()
-        local pm  = pF(fMain)
+        local pm  = pF(_fnt.main)
         local pad = 12*MDS
         local IW  = SW - pad*2
         local rndS = 12*MDS
@@ -2517,7 +2517,7 @@ imgui.OnFrame(
         local totVal = fmtNum(tot3)..'$'
         local totLS  = imgui.CalcTextSize(totLbl)
         local totVS  = imgui.CalcTextSize(totVal)
-        local pB2    = pF(fBig)
+        local pB2    = pF(_fnt.big)
         DL:AddText(imgui.ImVec2(WP.x+pad, cy2), u32(CLR.text), totLbl)
         DL:AddText(imgui.ImVec2(WP.x+SW-pad-totVS.x, cy2), u32(CLR.green), totVal)
         pFpop(pB2)
@@ -2560,7 +2560,7 @@ imgui.OnFrame(
 
         local DL  = imgui.GetWindowDrawList()
         local WP  = imgui.GetWindowPos()
-        local pm  = pF(fMain)
+        local pm  = pF(_fnt.main)
         local rnd = 12*MDS
         local pad = 14*MDS
 
@@ -2590,7 +2590,7 @@ imgui.OnFrame(
             u32(CLR.border), 1)
 
         -- Заголовок в хедере (иконка + текст)
-        local pB3 = pF(fMain)
+        local pB3 = pF(_fnt.main)
         local aeHdrIc = fa['UTENSILS']
         local aeHdrS  = imgui.CalcTextSize(aeHdrIc)
         DL:AddText(imgui.ImVec2(WP.x+pad, WP.y+hdrH*0.5-aeHdrS.y*0.5),
@@ -2642,7 +2642,7 @@ imgui.OnFrame(
                       or sv < 60 and imgui.ImVec4(0.95,0.70,0.10,1)
                       or CLR.green
         end
-        local pSm4 = pF(fSmall)
+        local pSm4 = pF(_fnt.small)
         local satLS2 = imgui.CalcTextSize(satCurLbl2)
         DL:AddText(imgui.ImVec2(cX + (cW-satLS2.x)*0.5, cy), u32(satCurCol2), satCurLbl2)
         pFpop(pSm4)
@@ -2676,7 +2676,7 @@ imgui.OnFrame(
                 DL:AddCircle(imgui.ImVec2(rdX2, midYf), rdSz2*0.5, u32(CLR.textDim), 24, 1.2)
             end
 
-            local pm5 = pF(fSmall)
+            local pm5 = pF(_fnt.small)
             local fS2 = imgui.CalcTextSize(foodNames2[i+1])
             DL:AddText(imgui.ImVec2(cX+8*MDS+rdSz2+6*MDS, midYf-fS2.y*0.5),
                 u32(selected2 and CLR.text or CLR.textDim), foodNames2[i+1])
@@ -2833,20 +2833,20 @@ function main()
     wait(300)
     loadCfg()
     saveCfg()
-    timerBuf[0] = botTimerMinutes
+    _buf.timer[0] = botTimerMinutes
     _ajBuf = imgui.new.int[1](autoJumpInterval)
     if autoJump then startAutoJump() end
 
     if type(tg.chat_id)=='string' and #tg.chat_id>0 then
         local clean = tg.chat_id:gsub('[^%d%-]',''):match('^%s*(.-)%s*$')
         tg.chat_id = clean
-        ffi.fill(tgChatBuf, 64, 0)
-        for i=0,#clean-1 do tgChatBuf[i]=string.byte(clean,i+1) end
+        ffi.fill(_buf.tgChat, 64, 0)
+        for i=0,#clean-1 do _buf.tgChat[i]=string.byte(clean,i+1) end
     end
-    calcCot[0]=calc.price_cotton
-    calcLin[0]=calc.price_linen
-    calcRar[0]=calc.price_rare
-    calcWat[0]=calc.price_water
+    _buf.cot[0]=calc.price_cotton
+    _buf.lin[0]=calc.price_linen
+    _buf.rar[0]=calc.price_rare
+    _buf.wat[0]=calc.price_water
 
     local playerHandle=nil
     pcall(function()
