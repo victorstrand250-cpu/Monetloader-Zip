@@ -857,6 +857,8 @@ local function findAllBushes()
     return bushes
 end
 
+local _smoothCamAngle = 0
+
 -- Обход препятствий: боковой стик при наличии стены/забора впереди
 local function calculateObstacleTurn()
     local ok, cx, cy, cz = pcall(getCharCoordinates, PLAYER_PED)
@@ -933,6 +935,9 @@ local function runToPoint(tox,toy,toz)
     local stuckSince=nil
     local sideDir=1
     local nearHarvestSaid=false
+    -- Инициализируем угол камеры текущим heading персонажа
+    local ok0, ch0 = pcall(getCharHeading, PLAYER_PED)
+    if ok0 and ch0 then _smoothCamAngle = ch0 end
 
     while farm.running do
         local cx,cy=getCharCoordinates(PLAYER_PED)
@@ -1026,6 +1031,13 @@ local function runToPoint(tox,toy,toz)
                 end)
             end
             return true
+        end
+
+        local toAng = getHeadingFromVector2d(tox-cx, toy-cy)
+        local angleDiff = ((toAng - _smoothCamAngle + 180) % 360) - 180
+        if math.abs(angleDiff) > 3 then
+            _smoothCamAngle = (_smoothCamAngle + angleDiff * 0.3 + 360) % 360
+            pcall(setCameraPositionUnfixed, 0, math.rad(_smoothCamAngle - 90))
         end
 
         sprintActive = farm.sprint and (dist > 3.0)
