@@ -3060,7 +3060,7 @@ function main()
                         doHarvest()
 
                         local collected = false
-                        while farm.running and (os.clock() - timerStart) < 17 do
+                        while farm.running and (os.clock() - timerStart) < 12 do
                             if farm.res_counter.cotton > lastCotton
                             or farm.res_counter.linen  > lastLinen
                             or farm.res_counter.rare   > lastRare
@@ -3069,7 +3069,7 @@ function main()
                                 break
                             end
 
-                            if (os.clock() - lastResTime) >= 17 then
+                            if (os.clock() - lastResTime) >= 12 then
                                 addLog('[\xd4\xe5\xf0\xec\xe0] 20\xf1 \xe1\xe5\xe7 \xf0\xe5\xf1\xf3\xf0\xf1\xe0 — \xef\xe5\xf0\xe5\xe7\xe0\xf5\xee\xe4')
                                 setGameKeyState(1,0); stopSprint()
                                 local cx_s,cy_s,cz_s = getCharCoordinates(PLAYER_PED)
