@@ -1035,8 +1035,8 @@ local function runToPoint(tox,toy,toz)
 
         local toAng = getHeadingFromVector2d(tox-cx, toy-cy)
         local angleDiff = ((toAng - _smoothCamAngle + 180) % 360) - 180
-        if math.abs(angleDiff) > 3 then
-            _smoothCamAngle = (_smoothCamAngle + angleDiff * 0.3 + 360) % 360
+        if math.abs(angleDiff) > 2 then
+            _smoothCamAngle = (_smoothCamAngle + angleDiff * 0.08 + 360) % 360
             pcall(setCameraPositionUnfixed, 0, math.rad(_smoothCamAngle - 90))
         end
 
