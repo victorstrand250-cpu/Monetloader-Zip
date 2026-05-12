@@ -190,8 +190,9 @@ local farm = {
     stop_on_tp      = false,
     stop_on_chat    = false,
     quit_on_stop    = false,
-    chat_on_players = true,
-    patrol_unripe   = true,
+    chat_on_players   = true,
+    patrol_unripe     = true,
+    infinite_stamina  = false,
     res_counter     = { cotton = 0, linen = 0, rare = 0, coal = 0 },
     stats           = { start_time = 0 },
     target          = nil,
@@ -251,7 +252,7 @@ lua_thread.create(function()
         wait(500)
         if aaState then
             if sampIsDialogActive() then
-                if os.clock() - aaTimes > 60 and not aaReplying and aaAngry < 2 then
+                if os.clock() - aaTimes > 15 and not aaReplying and aaAngry < 2 then
                     lua_thread.create(function() aaSendReply(aaNonrp ~= nil) end)
                 end
             end
@@ -292,12 +293,14 @@ local function applyRunTired(playerHandle)
     end
 end
 
--- Бесконечная дыхалка: сбрасывает усталость каждый кадр как PC-версия
+-- Бесконечная дыхалка: сбрасывает усталость каждый кадр (аналог PC mem.setint8)
 lua_thread.create(function()
     while not isSampAvailable() do wait(1000) end
     while true do
         wait(0)
-        pcall(setPlayerNeverGetsTired, PLAYER_PED, true)
+        if farm.infinite_stamina and PLAYER_PED and doesCharExist(PLAYER_PED) then
+            pcall(setPlayerNeverGetsTired, PLAYER_PED, true)
+        end
     end
 end)
 
@@ -614,6 +617,7 @@ local function loadCfg()
     farm.patrol_unripe   = false
     autoJump             = false
     autoEat              = false
+    farm.infinite_stamina = false
     aaState              = false
     aaAngry              = 0
     aaReplying           = false
@@ -2042,6 +2046,14 @@ imgui.OnFrame(
             local curRun, chRun = toggleRow(DL, cntX+8*MDS, cy+(rh-22*MDS)*0.5, cntW-8*MDS,
                 u8'\xc1\xe5\xe3 (Run)', runActive)
             if chRun then runActive = curRun end
+            cy = cy + rh + 5*MDS
+
+            rowBg(DL, cntX, cy, cntW, rh)
+            imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
+            imgui.Dummy(imgui.ImVec2(cntW, rh))
+            local curStam, chStam = toggleRow(DL, cntX+8*MDS, cy+(rh-22*MDS)*0.5, cntW-8*MDS,
+                u8'\xc4\xfb\xf5\xe0\xeb\xea\xe0 ∞', farm.infinite_stamina)
+            if chStam then farm.infinite_stamina = curStam end
             cy = cy + rh + 5*MDS
 
             rowBg(DL, cntX, cy, cntW, rh)
