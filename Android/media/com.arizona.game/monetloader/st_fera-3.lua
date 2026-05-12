@@ -227,19 +227,16 @@ local function aaIsAdmin(text)
 end
 
 local function aaSendReply(isNonRp)
-    if aaReplying then return end
+    if aaReplying or aaAngry >= 2 then return end
     aaReplying = true
     aaAngry = aaAngry + 1
     aaTimes = os.clock()
-    wait(math.random(3200, 4000))
+    wait(math.random(7000, 11000))
     local mesg
     if aaAngry == 1 then
         mesg = aaOtveti1[math.random(#aaOtveti1)]
-    elseif aaAngry == 2 then
-        mesg = aaOtveti2[math.random(#aaOtveti2)]
     else
-        mesg = aaOtveti3[math.random(#aaOtveti3)]
-        aaAngry = 0
+        mesg = aaOtveti2[math.random(#aaOtveti2)]
     end
     if isNonRp then
         sampSendChat('/b ' .. mesg)
@@ -254,7 +251,7 @@ lua_thread.create(function()
         wait(500)
         if aaState then
             if sampIsDialogActive() then
-                if os.clock() - aaTimes > 5 and not aaReplying then
+                if os.clock() - aaTimes > 60 and not aaReplying and aaAngry < 2 then
                     lua_thread.create(function() aaSendReply(aaNonrp ~= nil) end)
                 end
             end
@@ -609,6 +606,8 @@ local function loadCfg()
     autoJump             = false
     autoEat              = false
     aaState              = false
+    aaAngry              = 0
+    aaReplying           = false
     -- Persistent config values (prices, TG, license, statistics)
     calc.price_cotton    = tonumber(f.price_cotton) or 0
     calc.price_linen     = tonumber(f.price_linen)  or 0
@@ -1315,7 +1314,7 @@ function sampev.onServerMessage(color,txt)
             sendTG('[StrandFerma] ADMIN: возможная проверка /check!')
             addLog('[Защита] Возможный /check - уведомлен ТГ')
         end
-        if aaState and aaIsAdmin(txt) then
+        if aaState and aaIsAdmin(txt) and not aaReplying and aaAngry < 2 then
             lua_thread.create(function() aaSendReply(false) end)
         end
     end)
