@@ -1282,7 +1282,7 @@ function sampev.onServerMessage(color,txt)
                 end
             end
 
-            if txt:find('\xd3\xe3\xee\xeb\xfc \xe4\xeb\xff \xeb\xe8\xf7\xed\xfb\xf5 \xe3\xf0\xff\xe4\xee\xea') then
+            if txt:find('\xd3\xe3\xee\xeb\xfc') then
                 local amt3 = txt:match('%((%d+)\xf8\xf2%)')
                           or txt:match('[xX%*]%s*(%d+)%s*$')
                           or txt:match('%s(%d+)%s*$')
