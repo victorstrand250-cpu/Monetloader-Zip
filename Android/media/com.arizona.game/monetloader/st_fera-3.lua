@@ -1,7 +1,7 @@
 script_name('StrandFerma')
 script_author('Victor Strand')
-script_version('2.7-monet')
-script_version_number(27)
+script_version('3.0-monet')
+script_version_number(30)
 script_properties('work-in-pause')
 
 local imgui    = require('mimgui')
@@ -192,13 +192,13 @@ local farm = {
     quit_on_stop    = false,
     chat_on_players = true,
     patrol_unripe   = true,
-    res_counter     = { cotton = 0, linen = 0, rare = 0, water = 0 },
+    res_counter     = { cotton = 0, linen = 0, rare = 0, coal = 0 },
     stats           = { start_time = 0 },
     target          = nil,
 }
 
 local tg   = { enabled = true, token = TG_BOT_TOKEN, chat_id = '', logs = true }
-local calc = { price_cotton = 0, price_linen = 0, price_rare = 0, price_water = 0 }
+local calc = { price_cotton = 0, price_linen = 0, price_rare = 0, price_coal = 0 }
 
 local tgNearbyCooldown = 0
 local antiAdminEnableTime = 0
@@ -463,7 +463,7 @@ local CLR = {
     tgBlue  = imgui.ImVec4(0.094, 0.459, 0.812, 1.00),
     tgH     = imgui.ImVec4(0.141, 0.596, 0.949, 1.00),
 
-    water   = imgui.ImVec4(0.310, 0.780, 1.000, 1.00),
+    coal    = imgui.ImVec4(0.310, 0.780, 1.000, 1.00),
 }
 
 local function applyTheme()
@@ -554,14 +554,14 @@ ini = inicfg.load({
         quit_stop='false',
         chat_on_players='false',
         patrol_unripe='false',
-        price_cotton='0', price_linen='0', price_rare='0', price_water='0',
+        price_cotton='0', price_linen='0', price_rare='0', price_coal='0',
         auto_jump='false', auto_jump_interval='5',
     auto_eat='false', auto_eat_food='0', auto_eat_min_satiety='80',
     auto_reply='false',
     },
     telegram={ enabled='true', chat_id='', logs='true' },
     ui={ hide_fab='true' },
-    stats={ cotton='0', linen='0', rare='0', water='0', start_time='0', bot_seconds='0' },
+    stats={ cotton='0', linen='0', rare='0', coal='0', start_time='0', bot_seconds='0' },
     cfg={ license_key='', bot_timer_minutes='0' },
 }, 'strand_ferma.ini')
 
@@ -571,7 +571,7 @@ local _farmDef = {
     stop_dialog='false', stop_tp='false', stop_chat='false',
     quit_stop='false', chat_on_players='false',
     patrol_unripe='false',
-    price_cotton='0', price_linen='0', price_rare='0', price_water='0',
+    price_cotton='0', price_linen='0', price_rare='0', price_coal='0',
     auto_jump='false', auto_jump_interval='5',
     auto_eat='false', auto_eat_food='0', auto_eat_min_satiety='80',
     auto_reply='false',
@@ -581,7 +581,7 @@ for k,v in pairs(_farmDef) do
 end
 if not ini.telegram then ini.telegram = { enabled='true', chat_id='', logs='true' } end
 if not ini.ui       then ini.ui       = { hide_fab='true' } end
-if not ini.stats    then ini.stats    = { cotton='0', linen='0', rare='0', water='0', start_time='0' } end
+if not ini.stats    then ini.stats    = { cotton='0', linen='0', rare='0', coal='0', start_time='0' } end
 if not ini.cfg      then ini.cfg      = { license_key='', bot_timer_minutes='0' } end
 if ini.cfg.bot_timer_minutes == nil then ini.cfg.bot_timer_minutes = '0' end
 
@@ -613,7 +613,7 @@ local function loadCfg()
     calc.price_cotton    = tonumber(f.price_cotton) or 0
     calc.price_linen     = tonumber(f.price_linen)  or 0
     calc.price_rare      = tonumber(f.price_rare)   or 0
-    calc.price_water     = tonumber(f.price_water)  or 0
+    calc.price_coal     = tonumber(f.price_coal)  or 0
     autoJumpInterval     = math.max(2, tonumber(f.auto_jump_interval) or 5)
     autoEatFood          = tonumber(f.auto_eat_food) or 0
     autoEatMinSatiety    = tonumber(f.auto_eat_min_satiety) or 80
@@ -626,7 +626,7 @@ local function loadCfg()
         farm.res_counter.cotton = tonumber(ini.stats.cotton) or 0
         farm.res_counter.linen  = tonumber(ini.stats.linen)  or 0
         farm.res_counter.rare   = tonumber(ini.stats.rare)   or 0
-        farm.res_counter.water  = tonumber(ini.stats.water)  or 0
+        farm.res_counter.coal  = tonumber(ini.stats.coal)  or 0
         farm.stats.start_time   = 0
         botTotalSeconds         = tonumber(ini.stats.bot_seconds) or 0
     end
@@ -639,7 +639,7 @@ local function saveCfg()
     f.price_cotton         = tostring(calc.price_cotton)
     f.price_linen          = tostring(calc.price_linen)
     f.price_rare           = tostring(calc.price_rare)
-    f.price_water          = tostring(calc.price_water)
+    f.price_coal          = tostring(calc.price_coal)
     f.auto_jump_interval   = tostring(autoJumpInterval)
     f.auto_eat_food        = tostring(autoEatFood)
     f.auto_eat_min_satiety = tostring(autoEatMinSatiety)
@@ -652,7 +652,7 @@ local function saveCfg()
     ini.stats.cotton      = tostring(farm.res_counter.cotton)
     ini.stats.linen       = tostring(farm.res_counter.linen)
     ini.stats.rare        = tostring(farm.res_counter.rare)
-    ini.stats.water       = tostring(farm.res_counter.water)
+    ini.stats.coal       = tostring(farm.res_counter.coal)
     ini.stats.bot_seconds = tostring(botTotalSeconds)
     if not ini.cfg then ini.cfg = {} end
     ini.cfg.license_key       = tostring(licenseKey or '')
@@ -730,12 +730,12 @@ local function sendStatsReport(reason)
     local pc=rc.cotton*calc.price_cotton
     local pl=rc.linen *calc.price_linen
     local pr=rc.rare  *calc.price_rare
-    local pw3=rc.water*calc.price_water
+    local pw3=rc.coal*calc.price_coal
     local msg = u8(string.format(
-        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
+        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xd3\xe3\xee\xeb\xfc: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
         reason,
         math.floor(el/3600),math.floor((el%3600)/60),el%60,
-        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.water,pw3, pc+pl+pr+pw3))
+        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.coal,pw3, pc+pl+pr+pw3))
     sendTG(msg)
 end
 
@@ -1282,13 +1282,13 @@ function sampev.onServerMessage(color,txt)
                 end
             end
 
-            if txt:find('\xc2\xee\xe4\xe0 \xe4\xeb\xff \xeb\xe8\xf7\xed\xfb\xf5 \xe3\xf0\xff\xe4\xee\xea') then
+            if txt:find('\xd3\xe3\xee\xeb\xfc \xe4\xeb\xff \xeb\xe8\xf7\xed\xfb\xf5 \xe3\xf0\xff\xe4\xee\xea') then
                 local amt3 = txt:match('%((%d+)\xf8\xf2%)')
                           or txt:match('[xX%*]%s*(%d+)%s*$')
                           or txt:match('%s(%d+)%s*$')
                           or 1
-                farm.res_counter.water = farm.res_counter.water + (tonumber(amt3) or 1)
-                addLog('[Вода] +'..(tonumber(amt3) or 1))
+                farm.res_counter.coal = farm.res_counter.coal + (tonumber(amt3) or 1)
+                addLog('[Уголь] +'..(tonumber(amt3) or 1))
             end
         end
 
@@ -1335,12 +1335,12 @@ local function buildExitMsg(reason)
     local pc=rc.cotton*calc.price_cotton
     local pl=rc.linen *calc.price_linen
     local pr=rc.rare  *calc.price_rare
-    local pw4=rc.water*calc.price_water
+    local pw4=rc.coal*calc.price_coal
     return u8(string.format(
-        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
+        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xd3\xe3\xee\xeb\xfc: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
         reason,
         math.floor(el/3600),math.floor((el%3600)/60),el%60,
-        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.water,pw4, pc+pl+pr+pw4))
+        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.coal,pw4, pc+pl+pr+pw4))
 end
 
 function sampev.onConnectionClosed()
@@ -1705,7 +1705,7 @@ imgui.OnFrame(
         DL:AddText(imgui.ImVec2(titleX, titleY),                u32(CLR.accent), strandS)
         DL:AddText(imgui.ImVec2(titleX+strandSz.x, titleY),     u32(CLR.text),   fermaS)
         pFpop(pB1)
-        local verS  = ' | v2.7'
+        local verS  = ' | v3.0'
         local verSz = imgui.CalcTextSize(verS)
         DL:AddText(imgui.ImVec2(titleX+strandSz.x+fermaSz.x, WP.y+hdrH*0.5-verSz.y*0.5+1*MDS),
             u32(CLR.textDim), verS)
@@ -1808,7 +1808,7 @@ imgui.OnFrame(
             drawStatCard(DL, cntX+cw+cg,    cy, cw, ch, u8'\xd1\xd2\xc0\xd2\xd3\xd1',
                 farm.running and u8'\xd0\xc0\xc1\xce\xd2\xc0' or u8'\xd1\xd2\xce\xc8\xd2',
                 farm.running and CLR.green or CLR.textDim)
-            drawStatCard(DL, cntX+cw*2+cg*2,cy, cw, ch, u8'\xc2\xd0\xc5\xcc\xdf', timeStr, imgui.ImVec4(0.88,0.96,0.56,1))
+            drawStatCard(DL, cntX+cw*2+cg*2,cy, cw, ch, u8'\xc1\xee\xf2 \xf0\xe0\xe1\xee\xf2\xe0\xeb', timeStr, imgui.ImVec4(0.88,0.96,0.56,1))
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch+6*MDS))
             cy = cy + ch + 8*MDS
@@ -1816,12 +1816,12 @@ imgui.OnFrame(
             local rc  = farm.res_counter
             local cg2 = 5*MDS; local cw2 = (cntW-cg2)*0.5; local ch2 = 44*MDS
             drawStatCard(DL, cntX,        cy, cw2, ch2, u8'\xd5\xcb\xce\xcf', fmtNum(rc.cotton), imgui.ImVec4(0.95,0.88,0.55,1))
-            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xcb\xb8\xcd',    fmtNum(rc.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
+            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xcb\xa8\xcd',    fmtNum(rc.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch2+5*MDS))
             cy = cy + ch2 + 7*MDS
             drawStatCard(DL, cntX,        cy, cw2, ch2, u8'\xd2\xca\xc0\xcd\xdc', fmtNum(rc.rare),  imgui.ImVec4(0.75,0.52,0.95,1))
-            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xc2\xce\xc4\xc0',     fmtNum(rc.water), CLR.water)
+            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xd3\xc3\xce\xcb\xdc',     fmtNum(rc.coal), CLR.coal)
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch2+8*MDS))
             cy = cy + ch2 + 8*MDS
@@ -2251,15 +2251,15 @@ imgui.OnFrame(
                 u8'\xd5\xeb\xee\xef\xee\xea:',
                 u8'\xcb\xb8\xed:',
                 u8'\xd2\xea\xe0\xed\xfc:',
-                u8'\xc2\xee\xe4\xe0:',
+                u8'\xd3\xe3\xee\xeb\xfc:',
             }
             local bufs   = { _buf.cot, _buf.lin, _buf.rar, _buf.wat }
-            local fields = { 'price_cotton','price_linen','price_rare','price_water' }
+            local fields = { 'price_cotton','price_linen','price_rare','price_coal' }
             local fcolors = {
                 imgui.ImVec4(0.95,0.88,0.55,1),
                 imgui.ImVec4(0.55,0.95,0.68,1),
                 imgui.ImVec4(0.75,0.52,0.95,1),
-                CLR.water,
+                CLR.coal,
             }
             for i = 1, 4 do
                 rowBg(DL, cntX, cy, cntW, rh3)
@@ -2314,7 +2314,7 @@ imgui.OnFrame(
             if dlBtn(DL, cntX+bw5+6*MDS, cy, bw5, 34*MDS,
                 imgui.ImVec4(0.20,0.05,0.05,1), imgui.ImVec4(0.40,0.09,0.09,1),
                 fa['ROTATE_LEFT']..' '..u8'\xd1\xe1\xf0\xee\xf1', CLR.red, 4*MDS) then
-                calc.price_cotton=0; calc.price_linen=0; calc.price_rare=0; calc.price_water=0
+                calc.price_cotton=0; calc.price_linen=0; calc.price_rare=0; calc.price_coal=0
                 _buf.cot[0]=0; _buf.lin[0]=0; _buf.rar[0]=0; _buf.wat[0]=0
                 saveCfg()
             end
@@ -2447,7 +2447,7 @@ imgui.OnFrame(
         DL:AddText(imgui.ImVec2(rstX+(rstSz-rstIS.x)*0.5, rstY2+(rstSz-rstIS.y)*0.5),
             u32(rstHov and CLR.accent or CLR.textDim), rstIc)
         if rstHov and imgui.IsMouseClicked(0) then
-            farm.res_counter = {cotton=0,linen=0,rare=0,water=0}
+            farm.res_counter = {cotton=0,linen=0,rare=0,coal=0}
             farm.stats.start_time = 0
             botTotalSeconds = 0
             if botSessionStart > 0 then botSessionStart = os.time() end
@@ -2471,19 +2471,19 @@ imgui.OnFrame(
         local el3    = getBotElapsed()
         local timeS3 = string.format('%02d:%02d:%02d',
             math.floor(el3/3600), math.floor((el3%3600)/60), el3%60)
-        local sesLbl = u8'\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: '..timeS3
+        local sesLbl = u8'\xc1\xee\xf2 \xf0\xe0\xe1\xee\xf2\xe0\xeb: '..timeS3
         DL:AddText(imgui.ImVec2(WP.x+pad, cy2), u32(CLR.textDim), sesLbl)
         cy2 = cy2 + imgui.CalcTextSize(sesLbl).y + 10*MDS
 
         local rc3  = farm.res_counter
         local cg3  = 5*MDS; local cw3 = (IW-cg3)*0.5; local ch3 = 42*MDS
         drawStatCard(DL, WP.x+pad,        cy2, cw3, ch3, u8'\xd5\xcb\xce\xcf', fmtNum(rc3.cotton), imgui.ImVec4(0.95,0.88,0.55,1))
-        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xcb\xb8\xcd',    fmtNum(rc3.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
+        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xcb\xa8\xcd',    fmtNum(rc3.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
         imgui.SetCursorPos(imgui.ImVec2(pad, cy2-WP.y))
         imgui.Dummy(imgui.ImVec2(IW, ch3+5*MDS))
         cy2 = cy2 + ch3 + 7*MDS
         drawStatCard(DL, WP.x+pad,        cy2, cw3, ch3, u8'\xd2\xca\xc0\xcd\xdc', fmtNum(rc3.rare),  imgui.ImVec4(0.75,0.52,0.95,1))
-        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xc2\xce\xc4\xc0',     fmtNum(rc3.water), CLR.water)
+        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xd3\xc3\xce\xcb\xdc',     fmtNum(rc3.coal), CLR.coal)
         imgui.SetCursorPos(imgui.ImVec2(pad, cy2-WP.y))
         imgui.Dummy(imgui.ImVec2(IW, ch3+8*MDS))
         cy2 = cy2 + ch3 + 8*MDS
@@ -2494,14 +2494,14 @@ imgui.OnFrame(
         local pc3  = rc3.cotton * calc.price_cotton
         local pl3  = rc3.linen  * calc.price_linen
         local pr3  = rc3.rare   * calc.price_rare
-        local pw3  = rc3.water  * calc.price_water
+        local pw3  = rc3.coal  * calc.price_coal
         local tot3 = pc3+pl3+pr3+pw3
 
         local incRows = {
             { u8'\xd5\xeb\xee\xef\xee\xea:', fmtNum(pc3)..'$', imgui.ImVec4(0.95,0.88,0.55,1) },
             { u8'\xcb\xb8\xed:',              fmtNum(pl3)..'$', imgui.ImVec4(0.55,0.95,0.68,1) },
             { u8'\xd2\xea\xe0\xed\xfc:',      fmtNum(pr3)..'$', imgui.ImVec4(0.75,0.52,0.95,1) },
-            { u8'\xc2\xee\xe4\xe0:',          fmtNum(pw3)..'$', CLR.water },
+            { u8'\xd3\xe3\xee\xeb\xfc:',          fmtNum(pw3)..'$', CLR.coal },
         }
         for _, row in ipairs(incRows) do
             local lS = imgui.CalcTextSize(row[1])
@@ -2846,7 +2846,7 @@ function main()
     _buf.cot[0]=calc.price_cotton
     _buf.lin[0]=calc.price_linen
     _buf.rar[0]=calc.price_rare
-    _buf.wat[0]=calc.price_water
+    _buf.wat[0]=calc.price_coal
 
     local playerHandle=nil
     pcall(function()
@@ -2857,7 +2857,7 @@ function main()
         end
     end)
 
-    sampAddChatMessage('{4488ff}[StrandFerma]: {aabbff}v2.7-monet | /sf | /sfhide',-1)
+    sampAddChatMessage('{4488ff}[StrandFerma]: {ff8844}v3.0-monet | /sf | /sfhide',-1)
 
     sampRegisterChatCommand('sf', function()
         if not licenseOK then
@@ -3053,7 +3053,7 @@ function main()
                         local lastCotton = farm.res_counter.cotton
                         local lastLinen  = farm.res_counter.linen
                         local lastRare   = farm.res_counter.rare
-                        local lastWater  = farm.res_counter.water
+                        local lastWater  = farm.res_counter.coal
                         local timerStart = os.clock()
                         local lastResTime = os.clock()
 
@@ -3064,7 +3064,7 @@ function main()
                             if farm.res_counter.cotton > lastCotton
                             or farm.res_counter.linen  > lastLinen
                             or farm.res_counter.rare   > lastRare
-                            or farm.res_counter.water  > lastWater then
+                            or farm.res_counter.coal  > lastWater then
                                 collected = true
                                 break
                             end
