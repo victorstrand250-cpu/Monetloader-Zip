@@ -89,16 +89,23 @@ function main()
         local ped = PLAYER_PED
 
         if cfg.main.sprint then
-            -- keep sprint stamina at maximum so the bar never empties
-            setCharStamina(ped, 150)
+            setPlayerNeverGetsTired(PLAYER_HANDLE, true)
+        else
+            setPlayerNeverGetsTired(PLAYER_HANDLE, false)
         end
 
         if cfg.main.breath then
-            -- raise lung capacity stat to maximum so the player never drowns
-            setPlayerStat(0, 24, 1000)
+            -- restore health if it drops from drowning
+            if isCharSwimming(ped) then
+                local hp    = getCharHealth(ped)
+                local maxhp = getCharMaxHealth(ped)
+                if hp < maxhp then
+                    setCharHealth(ped, maxhp)
+                end
+            end
         end
 
-        wait(50)
+        wait(100)
     end
 end
 
