@@ -463,7 +463,7 @@ local CLR = {
     tgBlue  = imgui.ImVec4(0.094, 0.459, 0.812, 1.00),
     tgH     = imgui.ImVec4(0.141, 0.596, 0.949, 1.00),
 
-    coal    = imgui.ImVec4(0.310, 0.780, 1.000, 1.00),
+    coal    = imgui.ImVec4(0.720, 0.450, 0.200, 1.00),
 }
 
 local function applyTheme()
@@ -2145,7 +2145,7 @@ imgui.OnFrame(
             local guards = {
                 { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xe4\xe8\xe0\xeb\xee\xe3\xe5',         'stop_on_dialog' },
                 { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xf2\xe5\xeb\xe5\xef\xee\xf0\xf2\xe5', 'stop_on_tp'     },
-                { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xef\xf1\xee\xe2\xe5\xf0\xea\xe5',     'stop_on_chat'   },
+                { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xef\xf0\xee\xe2\xe5\xf0\xea\xe5',     'stop_on_chat'   },
                 { u8'\xc2\xfb\xf5\xee\xe4 \xe8\xe7 \xe8\xe3\xf0\xfb',                     'quit_on_stop'   },
             }
             for _, g in ipairs(guards) do
