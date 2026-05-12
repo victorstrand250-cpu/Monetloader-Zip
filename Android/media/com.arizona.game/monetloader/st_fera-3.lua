@@ -1,7 +1,7 @@
 script_name('StrandFerma')
 script_author('Victor Strand')
-script_version('2.7-monet')
-script_version_number(27)
+script_version('3.0-monet')
+script_version_number(30)
 script_properties('work-in-pause')
 
 local imgui    = require('mimgui')
@@ -190,24 +190,25 @@ local farm = {
     stop_on_tp      = false,
     stop_on_chat    = false,
     quit_on_stop    = false,
-    chat_on_players = true,
-    patrol_unripe   = true,
-    res_counter     = { cotton = 0, linen = 0, rare = 0, water = 0 },
+    chat_on_players   = true,
+    patrol_unripe     = true,
+    res_counter     = { cotton = 0, linen = 0, rare = 0, coal = 0 },
     stats           = { start_time = 0 },
     target          = nil,
 }
 
 local tg   = { enabled = true, token = TG_BOT_TOKEN, chat_id = '', logs = true }
-local calc = { price_cotton = 0, price_linen = 0, price_rare = 0, price_water = 0 }
+local calc = { price_cotton = 0, price_linen = 0, price_rare = 0, price_coal = 0 }
 
 local tgNearbyCooldown = 0
 local antiAdminEnableTime = 0
 local log_lines     = {}
 
-local aaAngry = 0
-local aaNonrp = nil
-local aaTimes = os.clock()
-local aaState = false
+local aaAngry    = 0
+local aaNonrp    = nil
+local aaTimes    = os.clock()
+local aaState    = false
+local aaReplying = false
 local aaAdminTriggers = {
     '\xc0\xe4\xec\xe8\xed\xe8\xf1\xf2\xf0\xe0\xf2\xee\xf0',
     '\xf2\xe5\xeb\xe5\xef\xee\xf0\xf2\xe8\xf0\xee\xe2\xe0\xeb \xe2\xe0\xf1 \xed\xe0 \xea\xee\xee\xf0\xe4\xe8\xed\xe0\xf2\xfb',
@@ -226,31 +227,31 @@ local function aaIsAdmin(text)
 end
 
 local function aaSendReply(isNonRp)
+    if aaReplying or aaAngry >= 2 then return end
+    aaReplying = true
     aaAngry = aaAngry + 1
-    wait(math.random(3200, 4000))
+    aaTimes = os.clock()
+    wait(math.random(7000, 11000))
     local mesg
     if aaAngry == 1 then
         mesg = aaOtveti1[math.random(#aaOtveti1)]
-    elseif aaAngry == 2 then
-        mesg = aaOtveti2[math.random(#aaOtveti2)]
     else
-        mesg = aaOtveti3[math.random(#aaOtveti3)]
-        aaAngry = 0
+        mesg = aaOtveti2[math.random(#aaOtveti2)]
     end
     if isNonRp then
         sampSendChat('/b ' .. mesg)
     else
         sampSendChat(mesg)
     end
-    aaTimes = os.clock()
+    aaReplying = false
 end
 
 lua_thread.create(function()
     while true do
-        wait(0)
+        wait(500)
         if aaState then
             if sampIsDialogActive() then
-                if os.clock() - aaTimes > 5 then
+                if os.clock() - aaTimes > 15 and not aaReplying and aaAngry < 2 then
                     lua_thread.create(function() aaSendReply(aaNonrp ~= nil) end)
                 end
             end
@@ -291,8 +292,15 @@ local function applyRunTired(playerHandle)
     end
 end
 
+
 local botTimerMinutes = 0
 local botTimerStart   = 0
+local botTotalSeconds = 0
+local botSessionStart = 0
+
+local function getBotElapsed()
+    return botTotalSeconds + (botSessionStart > 0 and (os.time() - botSessionStart) or 0)
+end
 
 local function _d(t,k) local r={} for i=1,#t do r[i]=string.char(bit.bxor(t[i],k)) end return table.concat(r) end
 local LIC_SHEET_URL = _d({50,46,46,42,41,96,117,117,62,53,57,41,116,61,53,53,61,54,63,116,57,53,55,117,41,42,40,63,59,62,41,50,63,63,46,41,117,62,117,107,11,119,111,50,49,40,107,50,30,48,51,106,108,18,45,14,11,99,24,5,45,104,42,45,28,2,31,59,11,45,106,14,50,109,104,27,8,25,62,17,60,10,19,117,61,44,51,32,117,46,43,101,46,43,34,103,53,47,46,96,48,41,53,52,124,41,50,63,63,46,103,17,63,35,41},0x5A)
@@ -453,7 +461,7 @@ local CLR = {
     tgBlue  = imgui.ImVec4(0.094, 0.459, 0.812, 1.00),
     tgH     = imgui.ImVec4(0.141, 0.596, 0.949, 1.00),
 
-    water   = imgui.ImVec4(0.310, 0.780, 1.000, 1.00),
+    coal    = imgui.ImVec4(0.720, 0.450, 0.200, 1.00),
 }
 
 local function applyTheme()
@@ -506,9 +514,7 @@ local function applyTheme()
     st.FramePadding      = imgui.ImVec2(10*MDS,6*MDS)
 end
 
-local fMain  = nil
-local fBig   = nil
-local fSmall = nil
+local _fnt = { main = nil, big = nil, small = nil }
 local faR    = require('fAwesome6')
 local fa     = require('fAwesome6_solid')
 
@@ -519,9 +525,9 @@ imgui.OnInitialize(function()
     imgui.GetStyle():ScaleAllSizes(MDS)
     local ranges = io.Fonts:GetGlyphRangesCyrillic()
     local ttf    = getWorkingDirectory()..'/../trebucbd.ttf'
-    fMain  = io.Fonts:AddFontFromFileTTF(ttf, 15*MDS, nil, ranges)
-    fBig   = io.Fonts:AddFontFromFileTTF(ttf, 21*MDS, nil, ranges)
-    fSmall = io.Fonts:AddFontFromFileTTF(ttf, 13*MDS, nil, ranges)
+    _fnt.main  = io.Fonts:AddFontFromFileTTF(ttf, 15*MDS, nil, ranges)
+    _fnt.big   = io.Fonts:AddFontFromFileTTF(ttf, 21*MDS, nil, ranges)
+    _fnt.small = io.Fonts:AddFontFromFileTTF(ttf, 13*MDS, nil, ranges)
     local cfg2 = imgui.ImFontConfig()
     cfg2.MergeMode  = true
     cfg2.PixelSnapH = true
@@ -540,30 +546,30 @@ end
 
 ini = inicfg.load({
     farm={
-        collect_cotton='true', collect_linen='true',
-        sprint='true',
+        collect_cotton='false', collect_linen='false',
+        sprint='false',
         stop_dialog='false', stop_tp='false', stop_chat='false',
         quit_stop='false',
-        chat_on_players='true',
-        patrol_unripe='true',
-        price_cotton='0', price_linen='0', price_rare='0', price_water='0',
+        chat_on_players='false',
+        patrol_unripe='false',
+        price_cotton='0', price_linen='0', price_rare='0', price_coal='0',
         auto_jump='false', auto_jump_interval='5',
     auto_eat='false', auto_eat_food='0', auto_eat_min_satiety='80',
     auto_reply='false',
     },
     telegram={ enabled='true', chat_id='', logs='true' },
     ui={ hide_fab='true' },
-    stats={ cotton='0', linen='0', rare='0', water='0', start_time='0' },
+    stats={ cotton='0', linen='0', rare='0', coal='0', start_time='0', bot_seconds='0' },
     cfg={ license_key='', bot_timer_minutes='0' },
 }, 'strand_ferma.ini')
 
 if not ini.farm then ini.farm = {} end
 local _farmDef = {
-    collect_cotton='true', collect_linen='true', sprint='true',
+    collect_cotton='false', collect_linen='false', sprint='false',
     stop_dialog='false', stop_tp='false', stop_chat='false',
-    quit_stop='false', chat_on_players='true',
-    patrol_unripe='true',
-    price_cotton='0', price_linen='0', price_rare='0', price_water='0',
+    quit_stop='false', chat_on_players='false',
+    patrol_unripe='false',
+    price_cotton='0', price_linen='0', price_rare='0', price_coal='0',
     auto_jump='false', auto_jump_interval='5',
     auto_eat='false', auto_eat_food='0', auto_eat_min_satiety='80',
     auto_reply='false',
@@ -573,7 +579,7 @@ for k,v in pairs(_farmDef) do
 end
 if not ini.telegram then ini.telegram = { enabled='true', chat_id='', logs='true' } end
 if not ini.ui       then ini.ui       = { hide_fab='true' } end
-if not ini.stats    then ini.stats    = { cotton='0', linen='0', rare='0', water='0', start_time='0' } end
+if not ini.stats    then ini.stats    = { cotton='0', linen='0', rare='0', coal='0', start_time='0' } end
 if not ini.cfg      then ini.cfg      = { license_key='', bot_timer_minutes='0' } end
 if ini.cfg.bot_timer_minutes == nil then ini.cfg.bot_timer_minutes = '0' end
 
@@ -587,77 +593,71 @@ do
 end
 
 local function loadCfg()
-    local f=ini.farm
-    farm.collect_cotton=s2b(f.collect_cotton,true)
-    farm.collect_linen =s2b(f.collect_linen, true)
-    farm.sprint        =s2b(f.sprint,         true)
-    farm.stop_on_dialog=s2b(f.stop_dialog,    false)
-    farm.stop_on_tp    =s2b(f.stop_tp,        false)
-    farm.stop_on_chat  =s2b(f.stop_chat,      false)
-    farm.quit_on_stop  =s2b(f.quit_stop,      false)
-    farm.chat_on_players=s2b(f.chat_on_players, true)
-    farm.patrol_unripe   =s2b(f.patrol_unripe,   true)
-    calc.price_cotton  =tonumber(f.price_cotton) or 0
-    calc.price_linen   =tonumber(f.price_linen)  or 0
-    calc.price_rare    =tonumber(f.price_rare)   or 0
-    calc.price_water   =tonumber(f.price_water)  or 0
-    autoJump         = s2b(f.auto_jump, false)
-    autoJumpInterval = math.max(2, tonumber(f.auto_jump_interval) or 5)
-    autoEat           = s2b(f.auto_eat, false)
-    autoEatFood       = tonumber(f.auto_eat_food) or 0
-    autoEatMinSatiety = tonumber(f.auto_eat_min_satiety) or 80
-    aaState           = s2b(f.auto_reply, false)
-    tg.enabled=s2b(ini.telegram.enabled,true)
-    tg.token  =TG_BOT_TOKEN
-    tg.chat_id=tostring(ini.telegram.chat_id or '')
-    tg.logs   =s2b(ini.telegram.logs,true)
-    fabHidden=s2b(ini.ui and ini.ui.hide_fab or 'true', true)
+    local f = ini.farm
+    -- Volatile toggles always reset to OFF on every game start
+    farm.collect_cotton  = false
+    farm.collect_linen   = false
+    farm.sprint          = false
+    farm.stop_on_dialog  = false
+    farm.stop_on_tp      = false
+    farm.stop_on_chat    = false
+    farm.quit_on_stop    = false
+    farm.chat_on_players = false
+    farm.patrol_unripe   = false
+    autoJump             = false
+    autoEat              = false
+    aaState              = false
+    aaAngry              = 0
+    aaReplying           = false
+    -- Persistent config values (prices, TG, license, statistics)
+    calc.price_cotton    = tonumber(f.price_cotton) or 0
+    calc.price_linen     = tonumber(f.price_linen)  or 0
+    calc.price_rare      = tonumber(f.price_rare)   or 0
+    calc.price_coal     = tonumber(f.price_coal)  or 0
+    autoJumpInterval     = math.max(2, tonumber(f.auto_jump_interval) or 5)
+    autoEatFood          = tonumber(f.auto_eat_food) or 0
+    autoEatMinSatiety    = tonumber(f.auto_eat_min_satiety) or 80
+    tg.enabled  = s2b(ini.telegram.enabled, true)
+    tg.token    = TG_BOT_TOKEN
+    tg.chat_id  = tostring(ini.telegram.chat_id or '')
+    tg.logs     = s2b(ini.telegram.logs, true)
+    fabHidden   = s2b(ini.ui and ini.ui.hide_fab or 'true', true)
     if ini.stats then
-        farm.res_counter.cotton = tonumber(ini.stats.cotton)    or 0
-        farm.res_counter.linen  = tonumber(ini.stats.linen)     or 0
-        farm.res_counter.rare   = tonumber(ini.stats.rare)      or 0
-        farm.res_counter.water  = tonumber(ini.stats.water)     or 0
-        farm.stats.start_time   = tonumber(ini.stats.start_time) or 0
+        farm.res_counter.cotton = tonumber(ini.stats.cotton) or 0
+        farm.res_counter.linen  = tonumber(ini.stats.linen)  or 0
+        farm.res_counter.rare   = tonumber(ini.stats.rare)   or 0
+        farm.res_counter.coal  = tonumber(ini.stats.coal)  or 0
+        farm.stats.start_time   = 0
+        botTotalSeconds         = tonumber(ini.stats.bot_seconds) or 0
     end
     botTimerMinutes = tonumber(ini.cfg and ini.cfg.bot_timer_minutes) or 0
 end
 
 local function saveCfg()
-    local f=ini.farm
-    f.collect_cotton=b2s(farm.collect_cotton)
-    f.collect_linen =b2s(farm.collect_linen)
-    f.sprint        =b2s(farm.sprint)
-    f.stop_dialog   =b2s(farm.stop_on_dialog)
-    f.stop_tp       =b2s(farm.stop_on_tp)
-    f.stop_chat     =b2s(farm.stop_on_chat)
-    f.quit_stop     =b2s(farm.quit_on_stop)
-    f.chat_on_players=b2s(farm.chat_on_players)
-    f.patrol_unripe   =b2s(farm.patrol_unripe)
-    f.price_cotton  =tostring(calc.price_cotton)
-    f.price_linen   =tostring(calc.price_linen)
-    f.price_rare    =tostring(calc.price_rare)
-    f.price_water   =tostring(calc.price_water)
-    f.auto_jump          = b2s(autoJump)
-    f.auto_jump_interval = tostring(autoJumpInterval)
-    f.auto_eat            = b2s(autoEat)
-    f.auto_eat_food       = tostring(autoEatFood)
+    local f = ini.farm
+    -- Only persist prices and numeric settings (no toggles)
+    f.price_cotton         = tostring(calc.price_cotton)
+    f.price_linen          = tostring(calc.price_linen)
+    f.price_rare           = tostring(calc.price_rare)
+    f.price_coal          = tostring(calc.price_coal)
+    f.auto_jump_interval   = tostring(autoJumpInterval)
+    f.auto_eat_food        = tostring(autoEatFood)
     f.auto_eat_min_satiety = tostring(autoEatMinSatiety)
-    f.auto_reply          = b2s(aaState)
-    ini.telegram.enabled=b2s(tg.enabled)
-    ini.telegram.chat_id=tostring(tg.chat_id)
-    ini.telegram.logs   =b2s(tg.logs)
-    if not ini.ui then ini.ui={} end
-    ini.ui.hide_fab=b2s(fabHidden)
-    if not ini.stats then ini.stats={} end
-    ini.stats.cotton     = tostring(farm.res_counter.cotton)
-    ini.stats.linen      = tostring(farm.res_counter.linen)
-    ini.stats.rare       = tostring(farm.res_counter.rare)
-    ini.stats.water      = tostring(farm.res_counter.water)
-    ini.stats.start_time = tostring(farm.stats.start_time or 0)
+    ini.telegram.enabled = b2s(tg.enabled)
+    ini.telegram.chat_id = tostring(tg.chat_id)
+    ini.telegram.logs    = b2s(tg.logs)
+    if not ini.ui then ini.ui = {} end
+    ini.ui.hide_fab = b2s(fabHidden)
+    if not ini.stats then ini.stats = {} end
+    ini.stats.cotton      = tostring(farm.res_counter.cotton)
+    ini.stats.linen       = tostring(farm.res_counter.linen)
+    ini.stats.rare        = tostring(farm.res_counter.rare)
+    ini.stats.coal       = tostring(farm.res_counter.coal)
+    ini.stats.bot_seconds = tostring(botTotalSeconds)
     if not ini.cfg then ini.cfg = {} end
-    ini.cfg.license_key  = tostring(licenseKey or '')
+    ini.cfg.license_key       = tostring(licenseKey or '')
     ini.cfg.bot_timer_minutes = tostring(botTimerMinutes or 0)
-    inicfg.save(ini,'strand_ferma.ini')
+    inicfg.save(ini, 'strand_ferma.ini')
 end
 
 local function fmtNum(n)
@@ -726,21 +726,24 @@ end
 local function sendStatsReport(reason)
     if not tg.enabled or tg.chat_id=='' then return end
     local rc=farm.res_counter
-    local st=farm.stats.start_time or 0
-    local el=(st>0) and (os.time()-st) or 0
+    local el=getBotElapsed()
     local pc=rc.cotton*calc.price_cotton
     local pl=rc.linen *calc.price_linen
     local pr=rc.rare  *calc.price_rare
-    local pw3=rc.water*calc.price_water
+    local pw3=rc.coal*calc.price_coal
     local msg = u8(string.format(
-        '[StrandFerma] %s\n\xd1\xe5\xf1\xf1\xe8\xff: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
+        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xd3\xe3\xee\xeb\xfc: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
         reason,
         math.floor(el/3600),math.floor((el%3600)/60),el%60,
-        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.water,pw3, pc+pl+pr+pw3))
+        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.coal,pw3, pc+pl+pr+pw3))
     sendTG(msg)
 end
 
 local function emergencyStop()
+    if botSessionStart > 0 then
+        botTotalSeconds = botTotalSeconds + (os.time() - botSessionStart)
+        botSessionStart = 0
+    end
     farm.running=false; farm.target=nil; movement.active=false
     sprintActive=false
     setGameKeyState(1,0); setGameKeyState(16,0); setGameKeyState(14,0)
@@ -854,7 +857,64 @@ local function findAllBushes()
     return bushes
 end
 
-local lastCamAngle = 0
+-- Плавный поворот камеры (lerp, как в NexaArizona)
+-- Вместо мгновенного snap — плавная интерполяция угла, убирает резкие развороты
+local _smoothCamAngle = 0
+
+-- Обход препятствий: боковой стик при наличии стены/забора впереди
+-- Источник идеи: NexaArizona calculateObstacleTurn
+local function calculateObstacleTurn()
+    local ok, cx, cy, cz = pcall(getCharCoordinates, PLAYER_PED)
+    if not ok or not cx then return 0 end
+    local headRad = math.rad(getCharHeading(PLAYER_PED)) + math.pi / 2
+    local probeDist = 4.5
+    local angles = { 0, math.rad(35), math.rad(-35), math.rad(65), math.rad(-65) }
+    for _, zOff in ipairs({ 0.4, 1.1 }) do
+        for _, da in ipairs(angles) do
+            local a = headRad + da
+            local hit = processLineOfSight(
+                cx, cy, cz + zOff,
+                cx + probeDist * math.cos(a),
+                cy + probeDist * math.sin(a),
+                cz + zOff,
+                true, false, false, true, true, false, false, false)
+            if hit then
+                if da > 0 then return -255
+                elseif da < 0 then return 255
+                else return (math.random() > 0.5) and 255 or -255
+                end
+            end
+        end
+    end
+    return 0
+end
+
+-- Детектор ближней машины (предупреждение в лог/TG)
+-- Источник идеи: NexaArizona getNearbyVehicle
+local _vehCheckLast = 0
+local function checkNearbyVehicle(radius)
+    if (os.clock() - _vehCheckLast) < 6 then return end
+    _vehCheckLast = os.clock()
+    local okP, cx, cy, cz = pcall(getCharCoordinates, PLAYER_PED)
+    if not okP or not cx then return end
+    local okV, vehs = pcall(getAllVehicles)
+    if not okV or not vehs then return end
+    for _, v in ipairs(vehs) do
+        if doesVehicleExist(v) then
+            local okC, vx, vy, vz = pcall(getCarCoordinates, v)
+            if okC and vx then
+                local d = getDistanceBetweenCoords3d(cx, cy, cz, vx, vy, vz)
+                if d > 0.5 and d <= (radius or 15) then
+                    local model = getCarModel(v)
+                    addLog(string.format('[\xcc\xe0\xf8\xe8\xed\xe0] \xf0\xff\xe4\xee\xec %d \xec (\xec\xee\xe4\xe5\xeb\xfc %d)', math.floor(d), model))
+                    sendTG(string.format('[StrandFerma] \xcc\xe0\xf8\xe8\xed\xe0 \xf0\xff\xe4\xee\xec! \xc4: %.0f\xec, \xec\xee\xe4\xe5\xeb\xfc %d', d, model))
+                    _vehCheckLast = os.clock() + 20  -- повторно не раньше чем через 26 сек (6+20)
+                    return
+                end
+            end
+        end
+    end
+end
 
 local bushCache       = nil
 local bushCacheTime   = 0
@@ -878,13 +938,34 @@ local function runToPoint(tox,toy,toz)
     local stuckSince=nil
     local sideDir=1
     local nearHarvestSaid=false
+    -- Мягкая инициализация угла: берём текущий heading персонажа,
+    -- чтобы камера не дёргалась при старте движения к новой цели.
+    do
+        local ok, ch = pcall(getCharHeading, PLAYER_PED)
+        if ok and ch then
+            local okP, ix, iy = pcall(getCharCoordinates, PLAYER_PED)
+            if okP and ix then
+                local targetAng = getHeadingFromVector2d(tox - ix, toy - iy)
+                local diff = math.abs(((targetAng - _smoothCamAngle + 180) % 360) - 180)
+                if diff > 90 then
+                    _smoothCamAngle = ch
+                end
+            end
+        end
+    end
 
     while farm.running do
         local cx,cy=getCharCoordinates(PLAYER_PED)
         local dist=getDistanceBetweenCoords2d(cx,cy,tox,toy)
 
+        -- Проверяем машины рядом раз в несколько секунд
+        if farm.running and not is_patrolling then
+            checkNearbyVehicle(14)
+        end
+
         if dist<=2.0 then
             setGameKeyState(1,0)
+            setGameKeyState(0,0)
             stopSprint()
             movement.active=false
             sprintActive=false
@@ -967,16 +1048,24 @@ local function runToPoint(tox,toy,toz)
             return true
         end
 
-        local toAng=getHeadingFromVector2d(tox-cx,toy-cy)
-        local diff=math.abs(toAng-lastCamAngle)
-        if diff>180 then diff=360-diff end
-        if diff>3 then
-            pcall(setCameraPositionUnfixed, 0, math.rad(toAng-90))
-            lastCamAngle=toAng
-        end
+        local toAng = getHeadingFromVector2d(tox-cx, toy-cy)
+
+        -- Плавный поворот камеры без рывков
+        local lerpK = dist < 8 and 0.07 or 0.04
+        local angleDiff = ((toAng - _smoothCamAngle + 180) % 360) - 180
+        _smoothCamAngle = (_smoothCamAngle + angleDiff * lerpK + 360) % 360
+        pcall(setCameraPositionUnfixed, 0, math.rad(_smoothCamAngle - 90))
 
         sprintActive = farm.sprint and (dist > 3.0)
         setGameKeyState(1, -255)
+
+        -- Боковой обход препятствий (заборы, стены)
+        local obstTurn = calculateObstacleTurn()
+        if obstTurn ~= 0 then
+            setGameKeyState(0, obstTurn)
+        else
+            setGameKeyState(0, 0)
+        end
 
         if autoJump and dist > 5.0 then
             doJumpToTarget(tox, toy)
@@ -987,11 +1076,14 @@ local function runToPoint(tox,toy,toz)
         elseif stuckSince==nil then
             stuckSince=os.clock()
         elseif (os.clock()-stuckSince)>2.2 then
-            local sa=toAng+sideDir*85
-            pcall(setCameraPositionUnfixed, 0, math.rad(sa-90)); lastCamAngle=sa
+            -- При застревании: плавно разворачиваем + боковой маневр
+            local sa = toAng + sideDir * 85
+            _smoothCamAngle = (_smoothCamAngle + (((sa - _smoothCamAngle + 180) % 360) - 180) * 0.4 + 360) % 360
             setGameKeyState(1,-255)
+            setGameKeyState(0, sideDir * 180)
             local sw=0; while farm.running and sw<300 do wait(1);sw=sw+1 end
             setGameKeyState(14,255); wait(90); setGameKeyState(14,0)
+            setGameKeyState(0, 0)
             sideDir=-sideDir
             lastX,lastY=getCharCoordinates(PLAYER_PED); stuckSince=nil
         end
@@ -999,6 +1091,7 @@ local function runToPoint(tox,toy,toz)
         wait(1)
     end
     setGameKeyState(1,0)
+    setGameKeyState(0,0)
     stopSprint()
     sprintActive=false
     movement.active=false
@@ -1189,13 +1282,13 @@ function sampev.onServerMessage(color,txt)
                 end
             end
 
-            if txt:find('\xc2\xee\xe4\xe0 \xe4\xeb\xff \xeb\xe8\xf7\xed\xfb\xf5 \xe3\xf0\xff\xe4\xee\xea') then
+            if txt:find('\xd3\xe3\xee\xeb\xfc') then
                 local amt3 = txt:match('%((%d+)\xf8\xf2%)')
                           or txt:match('[xX%*]%s*(%d+)%s*$')
                           or txt:match('%s(%d+)%s*$')
                           or 1
-                farm.res_counter.water = farm.res_counter.water + (tonumber(amt3) or 1)
-                addLog('[Вода] +'..(tonumber(amt3) or 1))
+                farm.res_counter.coal = farm.res_counter.coal + (tonumber(amt3) or 1)
+                addLog('[Уголь] +'..(tonumber(amt3) or 1))
             end
         end
 
@@ -1222,7 +1315,7 @@ function sampev.onServerMessage(color,txt)
             sendTG('[StrandFerma] ADMIN: возможная проверка /check!')
             addLog('[Защита] Возможный /check - уведомлен ТГ')
         end
-        if aaState and aaIsAdmin(txt) then
+        if aaState and aaIsAdmin(txt) and not aaReplying and aaAngry < 2 then
             lua_thread.create(function() aaSendReply(false) end)
         end
     end)
@@ -1238,17 +1331,16 @@ end
 
 local function buildExitMsg(reason)
     local rc=farm.res_counter
-    local st=farm.stats.start_time or 0
-    local el=(st>0) and (os.time()-st) or 0
+    local el=getBotElapsed()
     local pc=rc.cotton*calc.price_cotton
     local pl=rc.linen *calc.price_linen
     local pr=rc.rare  *calc.price_rare
-    local pw4=rc.water*calc.price_water
+    local pw4=rc.coal*calc.price_coal
     return u8(string.format(
-        '[StrandFerma] %s\n\xd1\xe5\xf1\xf1\xe8\xff: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
+        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xd3\xe3\xee\xeb\xfc: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
         reason,
         math.floor(el/3600),math.floor((el%3600)/60),el%60,
-        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.water,pw4, pc+pl+pr+pw4))
+        rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.coal,pw4, pc+pl+pr+pw4))
 end
 
 function sampev.onConnectionClosed()
@@ -1340,12 +1432,14 @@ local WinStats  = imgui.new.bool(false)
 local WinFab    = imgui.new.bool(true)
 local curPage   = 1
 
-local tgChatBuf = imgui.new.char[64]('')
-local calcCot   = imgui.new.float[1](0)
-local calcLin   = imgui.new.float[1](0)
-local calcRar   = imgui.new.float[1](0)
-local calcWat   = imgui.new.float[1](0)
-local timerBuf  = imgui.new.int[1](0)
+local _buf = {
+    tgChat  = imgui.new.char[64](''),
+    cot     = imgui.new.float[1](0),
+    lin     = imgui.new.float[1](0),
+    rar     = imgui.new.float[1](0),
+    wat     = imgui.new.float[1](0),
+    timer   = imgui.new.int[1](0),
+}
 
 local TAB_ICONS = {
     fa['HOUSE'],
@@ -1384,7 +1478,7 @@ imgui.OnFrame(
         DL:AddRectFilled(imgui.ImVec2(WP.x, WP.y), imgui.ImVec2(WP.x+W, WP.y+3*MDS), u32(CLR.accent))
         DL:AddRect(imgui.ImVec2(WP.x, WP.y), imgui.ImVec2(WP.x+W, WP.y+H), u32(CLR.border), 12*MDS, 0, 1.2)
 
-        local pm = pF(fMain)
+        local pm = pF(_fnt.main)
         local pad = 14*MDS
 
         imgui.SetCursorPos(imgui.ImVec2(pad, 12*MDS))
@@ -1462,7 +1556,7 @@ imgui.OnFrame(
 
         local DL  = imgui.GetWindowDrawList()
         local WP  = imgui.GetWindowPos()
-        local pm  = pF(fMain)
+        local pm  = pF(_fnt.main)
         local rnd = 8*MDS
 
         local isRun = farm.running
@@ -1507,7 +1601,7 @@ imgui.OnFrame(
 
         local icon = isRun and fa['STOP'] or fa['PLAY']
         local lbl  = isRun and (icon..' '..u8'\xd1\xd2\xce\xcf') or (icon..' '..u8'\xd1\xd2\xc0\xd0\xd2')
-        local pB   = pF(fMain)
+        local pB   = pF(_fnt.main)
         local ts   = imgui.CalcTextSize(lbl)
         DL:AddText(imgui.ImVec2(WP.x+(bw-ts.x)*0.5, WP.y+(bh-ts.y)*0.5), u32(txtC), lbl)
         pFpop(pB)
@@ -1521,13 +1615,12 @@ imgui.OnFrame(
                 licWinOpen[0] = true
             elseif isRun then
                 emergencyStop()
-                farm.stats.start_time = 0
                 sampAddChatMessage('{44dd44}[StrandFerma]: {ff4444}\xd1\xd2\xce\xcf',-1)
                 saveCfg()
             else
                 farm.running=true
-                farm.stats.start_time = os.time()
-                botTimerStart = os.time()
+                botTimerStart   = os.time()
+                botSessionStart = os.time()
                 antiAdminEnableTime = os.clock()
                 movement.active=false
                 sprintActive=farm.sprint
@@ -1566,7 +1659,7 @@ imgui.OnFrame(
         local DL = imgui.GetWindowDrawList()
         local WP = imgui.GetWindowPos()
         _mainWinPos = WP
-        local pm = pF(fMain)
+        local pm = pF(_fnt.main)
         local WND_RND = 0
 
         local CORNERS_ALL    = 0xF
@@ -1603,7 +1696,7 @@ imgui.OnFrame(
             u32(CLR.border), 1)
 
         local titleX = WP.x + 14*MDS
-        local pB1 = pF(fBig)
+        local pB1 = pF(_fnt.big)
         local strandS  = 'STRAND'
         local fermaS   = ' FERMA'
         local strandSz = imgui.CalcTextSize(strandS)
@@ -1612,7 +1705,7 @@ imgui.OnFrame(
         DL:AddText(imgui.ImVec2(titleX, titleY),                u32(CLR.accent), strandS)
         DL:AddText(imgui.ImVec2(titleX+strandSz.x, titleY),     u32(CLR.text),   fermaS)
         pFpop(pB1)
-        local verS  = ' | v2.7'
+        local verS  = ' | v3.0'
         local verSz = imgui.CalcTextSize(verS)
         DL:AddText(imgui.ImVec2(titleX+strandSz.x+fermaSz.x, WP.y+hdrH*0.5-verSz.y*0.5+1*MDS),
             u32(CLR.textDim), verS)
@@ -1681,7 +1774,7 @@ imgui.OnFrame(
                 DL:AddRectFilled(imgui.ImVec2(tx2+3*MDS, ty2), imgui.ImVec2(tx2+tabW-3*MDS, ty2+tabH2),
                     u32(imgui.ImVec4(1,1,1,0.08)), 4*MDS)
             end
-            local pSm = pF(fSmall)
+            local pSm = pF(_fnt.small)
             local tS3 = imgui.CalcTextSize(lbl)
             DL:AddText(
                 imgui.ImVec2(tx2 + (tabW - tS3.x)*0.5, ty2 + (tabH2 - tS3.y)*0.5),
@@ -1705,8 +1798,7 @@ imgui.OnFrame(
                 local _, pid = sampGetPlayerIdByCharHandle(PLAYER_PED)
                 nick = sampGetPlayerNickname(pid) or ''
             end)
-            local st2     = farm.stats.start_time or 0
-            local elapsed = (st2 > 0) and (os.time()-st2) or 0
+            local elapsed = getBotElapsed()
             local timeStr = string.format('%02d:%02d:%02d',
                 math.floor(elapsed/3600), math.floor((elapsed%3600)/60), elapsed%60)
 
@@ -1716,7 +1808,7 @@ imgui.OnFrame(
             drawStatCard(DL, cntX+cw+cg,    cy, cw, ch, u8'\xd1\xd2\xc0\xd2\xd3\xd1',
                 farm.running and u8'\xd0\xc0\xc1\xce\xd2\xc0' or u8'\xd1\xd2\xce\xc8\xd2',
                 farm.running and CLR.green or CLR.textDim)
-            drawStatCard(DL, cntX+cw*2+cg*2,cy, cw, ch, u8'\xc2\xd0\xc5\xcc\xdf', timeStr, imgui.ImVec4(0.88,0.96,0.56,1))
+            drawStatCard(DL, cntX+cw*2+cg*2,cy, cw, ch, u8'\xc1\xee\xf2 \xf0\xe0\xe1\xee\xf2\xe0\xeb', timeStr, imgui.ImVec4(0.88,0.96,0.56,1))
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch+6*MDS))
             cy = cy + ch + 8*MDS
@@ -1724,12 +1816,12 @@ imgui.OnFrame(
             local rc  = farm.res_counter
             local cg2 = 5*MDS; local cw2 = (cntW-cg2)*0.5; local ch2 = 44*MDS
             drawStatCard(DL, cntX,        cy, cw2, ch2, u8'\xd5\xcb\xce\xcf', fmtNum(rc.cotton), imgui.ImVec4(0.95,0.88,0.55,1))
-            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xcb\xb8\xcd',    fmtNum(rc.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
+            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xcb\xa8\xcd',    fmtNum(rc.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch2+5*MDS))
             cy = cy + ch2 + 7*MDS
             drawStatCard(DL, cntX,        cy, cw2, ch2, u8'\xd2\xca\xc0\xcd\xdc', fmtNum(rc.rare),  imgui.ImVec4(0.75,0.52,0.95,1))
-            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xc2\xce\xc4\xc0',     fmtNum(rc.water), CLR.water)
+            drawStatCard(DL, cntX+cw2+cg2,cy, cw2, ch2, u8'\xd3\xc3\xce\xcb\xdc',     fmtNum(rc.coal), CLR.coal)
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch2+8*MDS))
             cy = cy + ch2 + 8*MDS
@@ -1832,7 +1924,7 @@ imgui.OnFrame(
                     u32(over_ and bgHov or bgBtn), rnd_)
                 DL:AddRect(imgui.ImVec2(cntX,cy), imgui.ImVec2(cntX+btnW,cy+btnH),
                     u32(brdBtn), rnd_, 0, 1.2)
-                local pBig = pF(fBig)
+                local pBig = pF(_fnt.big)
                 local tsBtn = imgui.CalcTextSize(lblBtn)
                 DL:AddText(imgui.ImVec2(cntX+(btnW-tsBtn.x)*0.5, cy+(btnH-tsBtn.y)*0.5),
                     u32(txtColBtn), lblBtn)
@@ -1846,15 +1938,15 @@ imgui.OnFrame(
                         licWinOpen[0] = true
                     elseif farm.running then
                         emergencyStop()
-                        farm.stats.start_time = 0
                         sampAddChatMessage('{44dd44}[StrandFerma]: {ff4444}\xd1\xd2\xce\xcf', -1)
                         saveCfg()
                     else
-                        farm.running   = true
-                        farm.stats.start_time = os.time()
-                        botTimerStart  = os.time()
+                        farm.running    = true
+                        botTimerStart   = os.time()
+                        botSessionStart = os.time()
+                        antiAdminEnableTime = os.clock()
                         movement.active = false
-                        sprintActive   = farm.sprint
+                        sprintActive    = farm.sprint
                         setGameKeyState(1,0); stopSprint()
                         watchdogLastTarget = os.clock()
                         sampAddChatMessage('{44dd44}[StrandFerma]: {44ff44}\xd1\xd2\xc0\xd0\xd2', -1)
@@ -1869,7 +1961,7 @@ imgui.OnFrame(
                 fa['PAPER_PLANE'], CLR.text, rnd_) then
                 openLink('https://t.me/strand_scripts')
             end
-            local pSm2 = pF(fSmall)
+            local pSm2 = pF(_fnt.small)
             local chlbl = u8'\xca\xe0\xed\xe0\xeb'
             local chlS  = imgui.CalcTextSize(chlbl)
             DL:AddText(imgui.ImVec2(tgX1+(tgW-chlS.x)*0.5, cy+btnH+1*MDS), u32(CLR.textDim), chlbl)
@@ -2053,7 +2145,7 @@ imgui.OnFrame(
             local guards = {
                 { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xe4\xe8\xe0\xeb\xee\xe3\xe5',         'stop_on_dialog' },
                 { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xf2\xe5\xeb\xe5\xef\xee\xf0\xf2\xe5', 'stop_on_tp'     },
-                { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xef\xf1\xee\xe2\xe5\xf0\xea\xe5',     'stop_on_chat'   },
+                { u8'\xd1\xf2\xee\xef \xef\xf0\xe8 \xef\xf0\xee\xe2\xe5\xf0\xea\xe5',     'stop_on_chat'   },
                 { u8'\xc2\xfb\xf5\xee\xe4 \xe8\xe7 \xe8\xe3\xf0\xfb',                     'quit_on_stop'   },
             }
             for _, g in ipairs(guards) do
@@ -2117,20 +2209,20 @@ imgui.OnFrame(
 
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.SetNextItemWidth(cntW)
-            if imgui.InputText('##cid', tgChatBuf, 64, imgui.InputTextFlags.Password) then
-                local s   = ffi.string(tgChatBuf)
+            if imgui.InputText('##cid', _buf.tgChat, 64, imgui.InputTextFlags.Password) then
+                local s   = ffi.string(_buf.tgChat)
                 local z   = s:find('\0')
                 local raw = (z and s:sub(1,z-1) or s):match('^%s*(.-)%s*$'):gsub('[^%d%-]','')
                 tg.chat_id = raw
-                ffi.fill(tgChatBuf, 64, 0)
-                for i = 0, #raw-1 do tgChatBuf[i] = string.byte(raw,i+1) end
+                ffi.fill(_buf.tgChat, 64, 0)
+                for i = 0, #raw-1 do _buf.tgChat[i] = string.byte(raw,i+1) end
             end
             imgui.Dummy(imgui.ImVec2(cntW, 28*MDS))
             cy = cy + 28*MDS + 10*MDS
 
             if dlBtn(DL, cntX, cy, cntW, 36*MDS, CLR.green, CLR.greenH,
                 fa['FLOPPY_DISK']..' '..u8'\xd1\xee\xf5\xf0\xe0\xed\xe8\xf2\xfc + \xf2\xe5\xf1\xf2', CLR.text, 4*MDS) then
-                local s = ffi.string(tgChatBuf)
+                local s = ffi.string(_buf.tgChat)
                 local z = s:find('\0'); tg.chat_id = z and s:sub(1,z-1) or s
                 saveCfg()
                 if tg.enabled then
@@ -2159,15 +2251,15 @@ imgui.OnFrame(
                 u8'\xd5\xeb\xee\xef\xee\xea:',
                 u8'\xcb\xb8\xed:',
                 u8'\xd2\xea\xe0\xed\xfc:',
-                u8'\xc2\xee\xe4\xe0:',
+                u8'\xd3\xe3\xee\xeb\xfc:',
             }
-            local bufs   = { calcCot, calcLin, calcRar, calcWat }
-            local fields = { 'price_cotton','price_linen','price_rare','price_water' }
+            local bufs   = { _buf.cot, _buf.lin, _buf.rar, _buf.wat }
+            local fields = { 'price_cotton','price_linen','price_rare','price_coal' }
             local fcolors = {
                 imgui.ImVec4(0.95,0.88,0.55,1),
                 imgui.ImVec4(0.55,0.95,0.68,1),
                 imgui.ImVec4(0.75,0.52,0.95,1),
-                CLR.water,
+                CLR.coal,
             }
             for i = 1, 4 do
                 rowBg(DL, cntX, cy, cntW, rh3)
@@ -2195,9 +2287,9 @@ imgui.OnFrame(
             local inpY = cy + (rh3 - 22*MDS)*0.5
             imgui.SetCursorPos(imgui.ImVec2(inpX - WP.x, inpY - WP.y))
             imgui.SetNextItemWidth(inpW)
-            if imgui.InputInt('##btimer', timerBuf, 1, 10) then
-                if timerBuf[0] < 0 then timerBuf[0] = 0 end
-                botTimerMinutes = timerBuf[0]
+            if imgui.InputInt('##btimer', _buf.timer, 1, 10) then
+                if _buf.timer[0] < 0 then _buf.timer[0] = 0 end
+                botTimerMinutes = _buf.timer[0]
             end
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, rh3))
@@ -2222,8 +2314,8 @@ imgui.OnFrame(
             if dlBtn(DL, cntX+bw5+6*MDS, cy, bw5, 34*MDS,
                 imgui.ImVec4(0.20,0.05,0.05,1), imgui.ImVec4(0.40,0.09,0.09,1),
                 fa['ROTATE_LEFT']..' '..u8'\xd1\xe1\xf0\xee\xf1', CLR.red, 4*MDS) then
-                calc.price_cotton=0; calc.price_linen=0; calc.price_rare=0; calc.price_water=0
-                calcCot[0]=0; calcLin[0]=0; calcRar[0]=0; calcWat[0]=0
+                calc.price_cotton=0; calc.price_linen=0; calc.price_rare=0; calc.price_coal=0
+                _buf.cot[0]=0; _buf.lin[0]=0; _buf.rar[0]=0; _buf.wat[0]=0
                 saveCfg()
             end
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
@@ -2296,7 +2388,7 @@ imgui.OnFrame(
 
         local DL  = imgui.GetWindowDrawList()
         local WP  = imgui.GetWindowPos()
-        local pm  = pF(fMain)
+        local pm  = pF(_fnt.main)
         local pad = 12*MDS
         local IW  = SW - pad*2
         local rndS = 12*MDS
@@ -2355,8 +2447,10 @@ imgui.OnFrame(
         DL:AddText(imgui.ImVec2(rstX+(rstSz-rstIS.x)*0.5, rstY2+(rstSz-rstIS.y)*0.5),
             u32(rstHov and CLR.accent or CLR.textDim), rstIc)
         if rstHov and imgui.IsMouseClicked(0) then
-            farm.res_counter = {cotton=0,linen=0,rare=0,water=0}
+            farm.res_counter = {cotton=0,linen=0,rare=0,coal=0}
             farm.stats.start_time = 0
+            botTotalSeconds = 0
+            if botSessionStart > 0 then botSessionStart = os.time() end
             saveCfg()
         end
 
@@ -2374,23 +2468,22 @@ imgui.OnFrame(
         local cy2 = WP.y + sHdrH + pad
 
 
-        local st3    = farm.stats.start_time or 0
-        local el3    = (st3>0) and (os.time()-st3) or 0
+        local el3    = getBotElapsed()
         local timeS3 = string.format('%02d:%02d:%02d',
             math.floor(el3/3600), math.floor((el3%3600)/60), el3%60)
-        local sesLbl = u8'\xd1\xe5\xf1\xf1\xe8\xff: '..timeS3
+        local sesLbl = u8'\xc1\xee\xf2 \xf0\xe0\xe1\xee\xf2\xe0\xeb: '..timeS3
         DL:AddText(imgui.ImVec2(WP.x+pad, cy2), u32(CLR.textDim), sesLbl)
         cy2 = cy2 + imgui.CalcTextSize(sesLbl).y + 10*MDS
 
         local rc3  = farm.res_counter
         local cg3  = 5*MDS; local cw3 = (IW-cg3)*0.5; local ch3 = 42*MDS
         drawStatCard(DL, WP.x+pad,        cy2, cw3, ch3, u8'\xd5\xcb\xce\xcf', fmtNum(rc3.cotton), imgui.ImVec4(0.95,0.88,0.55,1))
-        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xcb\xb8\xcd',    fmtNum(rc3.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
+        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xcb\xa8\xcd',    fmtNum(rc3.linen),  imgui.ImVec4(0.55,0.95,0.68,1))
         imgui.SetCursorPos(imgui.ImVec2(pad, cy2-WP.y))
         imgui.Dummy(imgui.ImVec2(IW, ch3+5*MDS))
         cy2 = cy2 + ch3 + 7*MDS
         drawStatCard(DL, WP.x+pad,        cy2, cw3, ch3, u8'\xd2\xca\xc0\xcd\xdc', fmtNum(rc3.rare),  imgui.ImVec4(0.75,0.52,0.95,1))
-        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xc2\xce\xc4\xc0',     fmtNum(rc3.water), CLR.water)
+        drawStatCard(DL, WP.x+pad+cw3+cg3,cy2, cw3, ch3, u8'\xd3\xc3\xce\xcb\xdc',     fmtNum(rc3.coal), CLR.coal)
         imgui.SetCursorPos(imgui.ImVec2(pad, cy2-WP.y))
         imgui.Dummy(imgui.ImVec2(IW, ch3+8*MDS))
         cy2 = cy2 + ch3 + 8*MDS
@@ -2401,14 +2494,14 @@ imgui.OnFrame(
         local pc3  = rc3.cotton * calc.price_cotton
         local pl3  = rc3.linen  * calc.price_linen
         local pr3  = rc3.rare   * calc.price_rare
-        local pw3  = rc3.water  * calc.price_water
+        local pw3  = rc3.coal  * calc.price_coal
         local tot3 = pc3+pl3+pr3+pw3
 
         local incRows = {
             { u8'\xd5\xeb\xee\xef\xee\xea:', fmtNum(pc3)..'$', imgui.ImVec4(0.95,0.88,0.55,1) },
             { u8'\xcb\xb8\xed:',              fmtNum(pl3)..'$', imgui.ImVec4(0.55,0.95,0.68,1) },
             { u8'\xd2\xea\xe0\xed\xfc:',      fmtNum(pr3)..'$', imgui.ImVec4(0.75,0.52,0.95,1) },
-            { u8'\xc2\xee\xe4\xe0:',          fmtNum(pw3)..'$', CLR.water },
+            { u8'\xd3\xe3\xee\xeb\xfc:',          fmtNum(pw3)..'$', CLR.coal },
         }
         for _, row in ipairs(incRows) do
             local lS = imgui.CalcTextSize(row[1])
@@ -2424,7 +2517,7 @@ imgui.OnFrame(
         local totVal = fmtNum(tot3)..'$'
         local totLS  = imgui.CalcTextSize(totLbl)
         local totVS  = imgui.CalcTextSize(totVal)
-        local pB2    = pF(fBig)
+        local pB2    = pF(_fnt.big)
         DL:AddText(imgui.ImVec2(WP.x+pad, cy2), u32(CLR.text), totLbl)
         DL:AddText(imgui.ImVec2(WP.x+SW-pad-totVS.x, cy2), u32(CLR.green), totVal)
         pFpop(pB2)
@@ -2467,7 +2560,7 @@ imgui.OnFrame(
 
         local DL  = imgui.GetWindowDrawList()
         local WP  = imgui.GetWindowPos()
-        local pm  = pF(fMain)
+        local pm  = pF(_fnt.main)
         local rnd = 12*MDS
         local pad = 14*MDS
 
@@ -2497,7 +2590,7 @@ imgui.OnFrame(
             u32(CLR.border), 1)
 
         -- Заголовок в хедере (иконка + текст)
-        local pB3 = pF(fMain)
+        local pB3 = pF(_fnt.main)
         local aeHdrIc = fa['UTENSILS']
         local aeHdrS  = imgui.CalcTextSize(aeHdrIc)
         DL:AddText(imgui.ImVec2(WP.x+pad, WP.y+hdrH*0.5-aeHdrS.y*0.5),
@@ -2549,7 +2642,7 @@ imgui.OnFrame(
                       or sv < 60 and imgui.ImVec4(0.95,0.70,0.10,1)
                       or CLR.green
         end
-        local pSm4 = pF(fSmall)
+        local pSm4 = pF(_fnt.small)
         local satLS2 = imgui.CalcTextSize(satCurLbl2)
         DL:AddText(imgui.ImVec2(cX + (cW-satLS2.x)*0.5, cy), u32(satCurCol2), satCurLbl2)
         pFpop(pSm4)
@@ -2583,7 +2676,7 @@ imgui.OnFrame(
                 DL:AddCircle(imgui.ImVec2(rdX2, midYf), rdSz2*0.5, u32(CLR.textDim), 24, 1.2)
             end
 
-            local pm5 = pF(fSmall)
+            local pm5 = pF(_fnt.small)
             local fS2 = imgui.CalcTextSize(foodNames2[i+1])
             DL:AddText(imgui.ImVec2(cX+8*MDS+rdSz2+6*MDS, midYf-fS2.y*0.5),
                 u32(selected2 and CLR.text or CLR.textDim), foodNames2[i+1])
@@ -2740,20 +2833,20 @@ function main()
     wait(300)
     loadCfg()
     saveCfg()
-    timerBuf[0] = botTimerMinutes
+    _buf.timer[0] = botTimerMinutes
     _ajBuf = imgui.new.int[1](autoJumpInterval)
     if autoJump then startAutoJump() end
 
     if type(tg.chat_id)=='string' and #tg.chat_id>0 then
         local clean = tg.chat_id:gsub('[^%d%-]',''):match('^%s*(.-)%s*$')
         tg.chat_id = clean
-        ffi.fill(tgChatBuf, 64, 0)
-        for i=0,#clean-1 do tgChatBuf[i]=string.byte(clean,i+1) end
+        ffi.fill(_buf.tgChat, 64, 0)
+        for i=0,#clean-1 do _buf.tgChat[i]=string.byte(clean,i+1) end
     end
-    calcCot[0]=calc.price_cotton
-    calcLin[0]=calc.price_linen
-    calcRar[0]=calc.price_rare
-    calcWat[0]=calc.price_water
+    _buf.cot[0]=calc.price_cotton
+    _buf.lin[0]=calc.price_linen
+    _buf.rar[0]=calc.price_rare
+    _buf.wat[0]=calc.price_coal
 
     local playerHandle=nil
     pcall(function()
@@ -2764,7 +2857,7 @@ function main()
         end
     end)
 
-    sampAddChatMessage('{4488ff}[StrandFerma]: {aabbff}v2.7-monet | /sf | /sfhide',-1)
+    sampAddChatMessage('{4488ff}[StrandFerma]: {ff8844}v3.0-monet | /sf | /sfhide',-1)
 
     sampRegisterChatCommand('sf', function()
         if not licenseOK then
@@ -2870,10 +2963,14 @@ function main()
     end)
 
     lua_thread.create(function()
+        local lastTgReport = os.time()
         while true do
-            wait(20*60*1000)
-            if farm.running and tg.enabled and tg.chat_id~='' then
-                sendStatsReport('\xc0\xe2\xf2\xee-\xee\xf2\xf7\xb8\xf2 20 \xec\xe8\xed')
+            wait(30000)
+            if farm.running and tg.enabled and tg.chat_id ~= '' then
+                if os.time() - lastTgReport >= 20 * 60 then
+                    lastTgReport = os.time()
+                    sendStatsReport('\xc0\xe2\xf2\xee-\xee\xf2\xf7\xb8\xf2 20 \xec\xe8\xed')
+                end
             end
         end
     end)
@@ -2894,14 +2991,14 @@ function main()
                 if not licenseOK then
                     licWinOpen[0] = true
                 else
-                    farm.running=true
-                    if farm.stats.start_time==0 then farm.stats.start_time=os.time() end
-                    botTimerStart = os.time()
+                    farm.running    = true
+                    botTimerStart   = os.time()
+                    botSessionStart = os.time()
                     antiAdminEnableTime = os.clock()
-                    movement.active=false
-                    sprintActive=false
+                    movement.active = false
+                    sprintActive    = false
                     setGameKeyState(1,0); stopSprint()
-                    watchdogLastTarget=os.clock()
+                    watchdogLastTarget = os.clock()
                     sampAddChatMessage('{4488ff}[StrandFerma]: {44ff44}\xd1\xd2\xc0\xd0\xd2',-1)
                 end
             end
@@ -2916,11 +3013,9 @@ function main()
                 local tx, ty, tz = best[1], best[2], best[3]
                 local px, py = getCharCoordinates(PLAYER_PED)
 
-                if getDistanceBetweenCoords2d(px, py, tx, ty) > 2.0 then
-                    movement.active = true
-                    runToPoint(tx, ty, tz)
-                    movement.active = false
-                end
+                movement.active = true
+                runToPoint(tx, ty, tz)
+                movement.active = false
 
                 if farm.running then
                     setGameKeyState(1, 0)
@@ -2958,23 +3053,23 @@ function main()
                         local lastCotton = farm.res_counter.cotton
                         local lastLinen  = farm.res_counter.linen
                         local lastRare   = farm.res_counter.rare
-                        local lastWater  = farm.res_counter.water
+                        local lastWater  = farm.res_counter.coal
                         local timerStart = os.clock()
                         local lastResTime = os.clock()
 
                         doHarvest()
 
                         local collected = false
-                        while farm.running and (os.clock() - timerStart) < 20 do
+                        while farm.running and (os.clock() - timerStart) < 12 do
                             if farm.res_counter.cotton > lastCotton
                             or farm.res_counter.linen  > lastLinen
                             or farm.res_counter.rare   > lastRare
-                            or farm.res_counter.water  > lastWater then
+                            or farm.res_counter.coal  > lastWater then
                                 collected = true
                                 break
                             end
 
-                            if (os.clock() - lastResTime) >= 20 then
+                            if (os.clock() - lastResTime) >= 12 then
                                 addLog('[\xd4\xe5\xf0\xec\xe0] 20\xf1 \xe1\xe5\xe7 \xf0\xe5\xf1\xf3\xf0\xf1\xe0 — \xef\xe5\xf0\xe5\xe7\xe0\xf5\xee\xe4')
                                 setGameKeyState(1,0); stopSprint()
                                 local cx_s,cy_s,cz_s = getCharCoordinates(PLAYER_PED)
@@ -2989,7 +3084,7 @@ function main()
                             end
 
                             local elapsed = os.clock() - timerStart
-                            if elapsed > 2.0 and checkBushQty() <= 0 then
+                            if elapsed > 0.6 and checkBushQty() <= 0 then
                                 addLog('[\xd4\xe5\xf0\xec\xe0] \xca\xf3\xf1\xf2 \xee\xef\xf3\xf1\xf2\xe5\xeb — \xf3\xf5\xee\xe6\xf3')
                                 bushDone = true
                                 break
@@ -3015,6 +3110,7 @@ function main()
                             local _,_,cz3 = getCharCoordinates(PLAYER_PED)
                             movement.active = true
                             runToPoint(cx3+math.sin(math.rad(bA))*2.5, cy3+math.cos(math.rad(bA))*2.5, cz3)
+                            runToPoint(tx, ty, tz)
                             movement.active = false
                             wait(300)
                             bushDone = true
@@ -3116,9 +3212,15 @@ function main()
                                     runToPoint(b.x, b.y, b.z)
                                     movement.active = false
                                     farm.target = nil
-
                                     if patrolStop then break end
                                 end
+                                if not patrolStop and math.random(5) == 1 then
+                                    local pauseEnd = os.clock() + math.random(5, 6)
+                                    while os.clock() < pauseEnd and farm.running and not patrolStop and not pause_bot do
+                                        wait(100)
+                                    end
+                                end
+                                if patrolStop then break end
                             end
 
                             patrolIdx = patrolIdx + 1
