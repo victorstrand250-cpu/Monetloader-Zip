@@ -857,12 +857,7 @@ local function findAllBushes()
     return bushes
 end
 
--- Плавный поворот камеры (lerp, как в NexaArizona)
--- Вместо мгновенного snap — плавная интерполяция угла, убирает резкие развороты
-local _smoothCamAngle = 0
-
 -- Обход препятствий: боковой стик при наличии стены/забора впереди
--- Источник идеи: NexaArizona calculateObstacleTurn
 local function calculateObstacleTurn()
     local ok, cx, cy, cz = pcall(getCharCoordinates, PLAYER_PED)
     if not ok or not cx then return 0 end
@@ -938,21 +933,6 @@ local function runToPoint(tox,toy,toz)
     local stuckSince=nil
     local sideDir=1
     local nearHarvestSaid=false
-    -- Мягкая инициализация угла: берём текущий heading персонажа,
-    -- чтобы камера не дёргалась при старте движения к новой цели.
-    do
-        local ok, ch = pcall(getCharHeading, PLAYER_PED)
-        if ok and ch then
-            local okP, ix, iy = pcall(getCharCoordinates, PLAYER_PED)
-            if okP and ix then
-                local targetAng = getHeadingFromVector2d(tox - ix, toy - iy)
-                local diff = math.abs(((targetAng - _smoothCamAngle + 180) % 360) - 180)
-                if diff > 90 then
-                    _smoothCamAngle = ch
-                end
-            end
-        end
-    end
 
     while farm.running do
         local cx,cy=getCharCoordinates(PLAYER_PED)
@@ -1048,14 +1028,6 @@ local function runToPoint(tox,toy,toz)
             return true
         end
 
-        local toAng = getHeadingFromVector2d(tox-cx, toy-cy)
-
-        -- Плавный поворот камеры без рывков
-        local lerpK = dist < 8 and 0.07 or 0.04
-        local angleDiff = ((toAng - _smoothCamAngle + 180) % 360) - 180
-        _smoothCamAngle = (_smoothCamAngle + angleDiff * lerpK + 360) % 360
-        pcall(setCameraPositionUnfixed, 0, math.rad(_smoothCamAngle - 90))
-
         sprintActive = farm.sprint and (dist > 3.0)
         setGameKeyState(1, -255)
 
@@ -1076,9 +1048,6 @@ local function runToPoint(tox,toy,toz)
         elseif stuckSince==nil then
             stuckSince=os.clock()
         elseif (os.clock()-stuckSince)>2.2 then
-            -- При застревании: плавно разворачиваем + боковой маневр
-            local sa = toAng + sideDir * 85
-            _smoothCamAngle = (_smoothCamAngle + (((sa - _smoothCamAngle + 180) % 360) - 180) * 0.4 + 360) % 360
             setGameKeyState(1,-255)
             setGameKeyState(0, sideDir * 180)
             local sw=0; while farm.running and sw<300 do wait(1);sw=sw+1 end
@@ -1808,7 +1777,7 @@ imgui.OnFrame(
             drawStatCard(DL, cntX+cw+cg,    cy, cw, ch, u8'\xd1\xd2\xc0\xd2\xd3\xd1',
                 farm.running and u8'\xd0\xc0\xc1\xce\xd2\xc0' or u8'\xd1\xd2\xce\xc8\xd2',
                 farm.running and CLR.green or CLR.textDim)
-            drawStatCard(DL, cntX+cw*2+cg*2,cy, cw, ch, u8'\xc2\xd0\xc5\xcc\xdf', timeStr, imgui.ImVec4(0.88,0.96,0.56,1))
+            drawStatCard(DL, cntX+cw*2+cg*2,cy, cw, ch, u8'\xd0\xc0\xc1\xce\xd2\xc0\xcb', timeStr, imgui.ImVec4(0.88,0.96,0.56,1))
             imgui.SetCursorPos(imgui.ImVec2(cntX-WP.x, cy-WP.y))
             imgui.Dummy(imgui.ImVec2(cntW, ch+6*MDS))
             cy = cy + ch + 8*MDS
@@ -2471,7 +2440,7 @@ imgui.OnFrame(
         local el3    = getBotElapsed()
         local timeS3 = string.format('%02d:%02d:%02d',
             math.floor(el3/3600), math.floor((el3%3600)/60), el3%60)
-        local sesLbl = u8'\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: '..timeS3
+        local sesLbl = u8'\xc2\xf0\xe5\xec\xff \xf0\xe0\xe1\xee\xf2\xfb \xe1\xee\xf2\xe0: '..timeS3
         DL:AddText(imgui.ImVec2(WP.x+pad, cy2), u32(CLR.textDim), sesLbl)
         cy2 = cy2 + imgui.CalcTextSize(sesLbl).y + 10*MDS
 
@@ -3216,7 +3185,7 @@ function main()
                                     if patrolStop then break end
                                 end
                                 if not patrolStop and math.random(5) == 1 then
-                                    local pauseEnd = os.clock() + math.random(2, 3)
+                                    local pauseEnd = os.clock() + math.random(5, 6)
                                     while os.clock() < pauseEnd and farm.running and not patrolStop and not pause_bot do
                                         wait(100)
                                     end
