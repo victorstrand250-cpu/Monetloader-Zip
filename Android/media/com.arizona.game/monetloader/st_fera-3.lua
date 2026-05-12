@@ -292,6 +292,15 @@ local function applyRunTired(playerHandle)
     end
 end
 
+-- Бесконечная дыхалка: сбрасывает усталость каждый кадр как PC-версия
+lua_thread.create(function()
+    while not isSampAvailable() do wait(1000) end
+    while true do
+        wait(0)
+        pcall(setPlayerNeverGetsTired, PLAYER_PED, true)
+    end
+end)
+
 local botTimerMinutes = 0
 local botTimerStart   = 0
 local botTotalSeconds = 0
