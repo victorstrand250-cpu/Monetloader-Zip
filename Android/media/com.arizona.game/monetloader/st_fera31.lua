@@ -297,6 +297,12 @@ end
 
 local botTimerMinutes = 0
 local botTimerStart   = 0
+local botTotalSeconds = 0
+local botSessionStart = 0
+
+local function getBotElapsed()
+    return botTotalSeconds + (botSessionStart > 0 and (os.time() - botSessionStart) or 0)
+end
 
 local function _d(t,k) local r={} for i=1,#t do r[i]=string.char(bit.bxor(t[i],k)) end return table.concat(r) end
 local LIC_SHEET_URL = _d({50,46,46,42,41,96,117,117,62,53,57,41,116,61,53,53,61,54,63,116,57,53,55,117,41,42,40,63,59,62,41,50,63,63,46,41,117,62,117,107,11,119,111,50,49,40,107,50,30,48,51,106,108,18,45,14,11,99,24,5,45,104,42,45,28,2,31,59,11,45,106,14,50,109,104,27,8,25,62,17,60,10,19,117,61,44,51,32,117,46,43,101,46,43,34,103,53,47,46,96,48,41,53,52,124,41,50,63,63,46,103,17,63,35,41},0x5A)
@@ -557,7 +563,7 @@ ini = inicfg.load({
     },
     telegram={ enabled='true', chat_id='', logs='true' },
     ui={ hide_fab='true' },
-    stats={ cotton='0', linen='0', rare='0', water='0', start_time='0' },
+    stats={ cotton='0', linen='0', rare='0', water='0', start_time='0', bot_seconds='0' },
     cfg={ license_key='', bot_timer_minutes='0' },
 }, 'strand_ferma.ini')
 
@@ -591,77 +597,69 @@ do
 end
 
 local function loadCfg()
-    local f=ini.farm
-    farm.collect_cotton=s2b(f.collect_cotton,true)
-    farm.collect_linen =s2b(f.collect_linen, true)
-    farm.sprint        =s2b(f.sprint,         true)
-    farm.stop_on_dialog=s2b(f.stop_dialog,    false)
-    farm.stop_on_tp    =s2b(f.stop_tp,        false)
-    farm.stop_on_chat  =s2b(f.stop_chat,      false)
-    farm.quit_on_stop  =s2b(f.quit_stop,      false)
-    farm.chat_on_players=s2b(f.chat_on_players, true)
-    farm.patrol_unripe   =s2b(f.patrol_unripe,   true)
-    calc.price_cotton  =tonumber(f.price_cotton) or 0
-    calc.price_linen   =tonumber(f.price_linen)  or 0
-    calc.price_rare    =tonumber(f.price_rare)   or 0
-    calc.price_water   =tonumber(f.price_water)  or 0
-    autoJump         = s2b(f.auto_jump, false)
-    autoJumpInterval = math.max(2, tonumber(f.auto_jump_interval) or 5)
-    autoEat           = s2b(f.auto_eat, false)
-    autoEatFood       = tonumber(f.auto_eat_food) or 0
-    autoEatMinSatiety = tonumber(f.auto_eat_min_satiety) or 80
-    aaState           = s2b(f.auto_reply, false)
-    tg.enabled=s2b(ini.telegram.enabled,true)
-    tg.token  =TG_BOT_TOKEN
-    tg.chat_id=tostring(ini.telegram.chat_id or '')
-    tg.logs   =s2b(ini.telegram.logs,true)
-    fabHidden=s2b(ini.ui and ini.ui.hide_fab or 'true', true)
+    local f = ini.farm
+    -- Volatile toggles always reset to OFF on every game start
+    farm.collect_cotton  = false
+    farm.collect_linen   = false
+    farm.sprint          = false
+    farm.stop_on_dialog  = false
+    farm.stop_on_tp      = false
+    farm.stop_on_chat    = false
+    farm.quit_on_stop    = false
+    farm.chat_on_players = false
+    farm.patrol_unripe   = false
+    autoJump             = false
+    autoEat              = false
+    aaState              = false
+    -- Persistent config values (prices, TG, license, statistics)
+    calc.price_cotton    = tonumber(f.price_cotton) or 0
+    calc.price_linen     = tonumber(f.price_linen)  or 0
+    calc.price_rare      = tonumber(f.price_rare)   or 0
+    calc.price_water     = tonumber(f.price_water)  or 0
+    autoJumpInterval     = math.max(2, tonumber(f.auto_jump_interval) or 5)
+    autoEatFood          = tonumber(f.auto_eat_food) or 0
+    autoEatMinSatiety    = tonumber(f.auto_eat_min_satiety) or 80
+    tg.enabled  = s2b(ini.telegram.enabled, true)
+    tg.token    = TG_BOT_TOKEN
+    tg.chat_id  = tostring(ini.telegram.chat_id or '')
+    tg.logs     = s2b(ini.telegram.logs, true)
+    fabHidden   = s2b(ini.ui and ini.ui.hide_fab or 'true', true)
     if ini.stats then
-        farm.res_counter.cotton = tonumber(ini.stats.cotton)    or 0
-        farm.res_counter.linen  = tonumber(ini.stats.linen)     or 0
-        farm.res_counter.rare   = tonumber(ini.stats.rare)      or 0
-        farm.res_counter.water  = tonumber(ini.stats.water)     or 0
-        farm.stats.start_time   = tonumber(ini.stats.start_time) or 0
+        farm.res_counter.cotton = tonumber(ini.stats.cotton) or 0
+        farm.res_counter.linen  = tonumber(ini.stats.linen)  or 0
+        farm.res_counter.rare   = tonumber(ini.stats.rare)   or 0
+        farm.res_counter.water  = tonumber(ini.stats.water)  or 0
+        farm.stats.start_time   = 0
+        botTotalSeconds         = tonumber(ini.stats.bot_seconds) or 0
     end
     botTimerMinutes = tonumber(ini.cfg and ini.cfg.bot_timer_minutes) or 0
 end
 
 local function saveCfg()
-    local f=ini.farm
-    f.collect_cotton=b2s(farm.collect_cotton)
-    f.collect_linen =b2s(farm.collect_linen)
-    f.sprint        =b2s(farm.sprint)
-    f.stop_dialog   =b2s(farm.stop_on_dialog)
-    f.stop_tp       =b2s(farm.stop_on_tp)
-    f.stop_chat     =b2s(farm.stop_on_chat)
-    f.quit_stop     =b2s(farm.quit_on_stop)
-    f.chat_on_players=b2s(farm.chat_on_players)
-    f.patrol_unripe   =b2s(farm.patrol_unripe)
-    f.price_cotton  =tostring(calc.price_cotton)
-    f.price_linen   =tostring(calc.price_linen)
-    f.price_rare    =tostring(calc.price_rare)
-    f.price_water   =tostring(calc.price_water)
-    f.auto_jump          = b2s(autoJump)
-    f.auto_jump_interval = tostring(autoJumpInterval)
-    f.auto_eat            = b2s(autoEat)
-    f.auto_eat_food       = tostring(autoEatFood)
+    local f = ini.farm
+    -- Only persist prices and numeric settings (no toggles)
+    f.price_cotton         = tostring(calc.price_cotton)
+    f.price_linen          = tostring(calc.price_linen)
+    f.price_rare           = tostring(calc.price_rare)
+    f.price_water          = tostring(calc.price_water)
+    f.auto_jump_interval   = tostring(autoJumpInterval)
+    f.auto_eat_food        = tostring(autoEatFood)
     f.auto_eat_min_satiety = tostring(autoEatMinSatiety)
-    f.auto_reply          = b2s(aaState)
-    ini.telegram.enabled=b2s(tg.enabled)
-    ini.telegram.chat_id=tostring(tg.chat_id)
-    ini.telegram.logs   =b2s(tg.logs)
-    if not ini.ui then ini.ui={} end
-    ini.ui.hide_fab=b2s(fabHidden)
-    if not ini.stats then ini.stats={} end
-    ini.stats.cotton     = tostring(farm.res_counter.cotton)
-    ini.stats.linen      = tostring(farm.res_counter.linen)
-    ini.stats.rare       = tostring(farm.res_counter.rare)
-    ini.stats.water      = tostring(farm.res_counter.water)
-    ini.stats.start_time = tostring(farm.stats.start_time or 0)
+    ini.telegram.enabled = b2s(tg.enabled)
+    ini.telegram.chat_id = tostring(tg.chat_id)
+    ini.telegram.logs    = b2s(tg.logs)
+    if not ini.ui then ini.ui = {} end
+    ini.ui.hide_fab = b2s(fabHidden)
+    if not ini.stats then ini.stats = {} end
+    ini.stats.cotton      = tostring(farm.res_counter.cotton)
+    ini.stats.linen       = tostring(farm.res_counter.linen)
+    ini.stats.rare        = tostring(farm.res_counter.rare)
+    ini.stats.water       = tostring(farm.res_counter.water)
+    ini.stats.bot_seconds = tostring(botTotalSeconds)
     if not ini.cfg then ini.cfg = {} end
-    ini.cfg.license_key  = tostring(licenseKey or '')
+    ini.cfg.license_key       = tostring(licenseKey or '')
     ini.cfg.bot_timer_minutes = tostring(botTimerMinutes or 0)
-    inicfg.save(ini,'strand_ferma.ini')
+    inicfg.save(ini, 'strand_ferma.ini')
 end
 
 local function fmtNum(n)
@@ -730,14 +728,13 @@ end
 local function sendStatsReport(reason)
     if not tg.enabled or tg.chat_id=='' then return end
     local rc=farm.res_counter
-    local st=farm.stats.start_time or 0
-    local el=(st>0) and (os.time()-st) or 0
+    local el=getBotElapsed()
     local pc=rc.cotton*calc.price_cotton
     local pl=rc.linen *calc.price_linen
     local pr=rc.rare  *calc.price_rare
     local pw3=rc.water*calc.price_water
     local msg = u8(string.format(
-        '[StrandFerma] %s\n\xd1\xe5\xf1\xf1\xe8\xff: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
+        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
         reason,
         math.floor(el/3600),math.floor((el%3600)/60),el%60,
         rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.water,pw3, pc+pl+pr+pw3))
@@ -745,6 +742,10 @@ local function sendStatsReport(reason)
 end
 
 local function emergencyStop()
+    if botSessionStart > 0 then
+        botTotalSeconds = botTotalSeconds + (os.time() - botSessionStart)
+        botSessionStart = 0
+    end
     farm.running=false; farm.target=nil; movement.active=false
     sprintActive=false
     setGameKeyState(1,0); setGameKeyState(16,0); setGameKeyState(14,0)
@@ -1332,14 +1333,13 @@ end
 
 local function buildExitMsg(reason)
     local rc=farm.res_counter
-    local st=farm.stats.start_time or 0
-    local el=(st>0) and (os.time()-st) or 0
+    local el=getBotElapsed()
     local pc=rc.cotton*calc.price_cotton
     local pl=rc.linen *calc.price_linen
     local pr=rc.rare  *calc.price_rare
     local pw4=rc.water*calc.price_water
     return u8(string.format(
-        '[StrandFerma] %s\n\xd1\xe5\xf1\xf1\xe8\xff: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
+        '[StrandFerma] %s\n\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: %02d:%02d:%02d\n\xd5\xeb\xee\xef\xee\xea: %d (%.0f$)\n\xcb\xb8\xed: %d (%.0f$)\n\xd2\xea\xe0\xed\xfc: %d (%.0f$)\n\xc2\xee\xe4\xe0: %d (%.0f$)\n\xc8\xd2\xce\xc3\xce: %.0f$',
         reason,
         math.floor(el/3600),math.floor((el%3600)/60),el%60,
         rc.cotton,pc, rc.linen,pl, rc.rare,pr, rc.water,pw4, pc+pl+pr+pw4))
@@ -1615,13 +1615,12 @@ imgui.OnFrame(
                 licWinOpen[0] = true
             elseif isRun then
                 emergencyStop()
-                farm.stats.start_time = 0
                 sampAddChatMessage('{44dd44}[StrandFerma]: {ff4444}\xd1\xd2\xce\xcf',-1)
                 saveCfg()
             else
                 farm.running=true
-                farm.stats.start_time = os.time()
-                botTimerStart = os.time()
+                botTimerStart   = os.time()
+                botSessionStart = os.time()
                 antiAdminEnableTime = os.clock()
                 movement.active=false
                 sprintActive=farm.sprint
@@ -1799,8 +1798,7 @@ imgui.OnFrame(
                 local _, pid = sampGetPlayerIdByCharHandle(PLAYER_PED)
                 nick = sampGetPlayerNickname(pid) or ''
             end)
-            local st2     = farm.stats.start_time or 0
-            local elapsed = (st2 > 0) and (os.time()-st2) or 0
+            local elapsed = getBotElapsed()
             local timeStr = string.format('%02d:%02d:%02d',
                 math.floor(elapsed/3600), math.floor((elapsed%3600)/60), elapsed%60)
 
@@ -1940,15 +1938,15 @@ imgui.OnFrame(
                         licWinOpen[0] = true
                     elseif farm.running then
                         emergencyStop()
-                        farm.stats.start_time = 0
                         sampAddChatMessage('{44dd44}[StrandFerma]: {ff4444}\xd1\xd2\xce\xcf', -1)
                         saveCfg()
                     else
-                        farm.running   = true
-                        farm.stats.start_time = os.time()
-                        botTimerStart  = os.time()
+                        farm.running    = true
+                        botTimerStart   = os.time()
+                        botSessionStart = os.time()
+                        antiAdminEnableTime = os.clock()
                         movement.active = false
-                        sprintActive   = farm.sprint
+                        sprintActive    = farm.sprint
                         setGameKeyState(1,0); stopSprint()
                         watchdogLastTarget = os.clock()
                         sampAddChatMessage('{44dd44}[StrandFerma]: {44ff44}\xd1\xd2\xc0\xd0\xd2', -1)
@@ -2451,6 +2449,8 @@ imgui.OnFrame(
         if rstHov and imgui.IsMouseClicked(0) then
             farm.res_counter = {cotton=0,linen=0,rare=0,water=0}
             farm.stats.start_time = 0
+            botTotalSeconds = 0
+            if botSessionStart > 0 then botSessionStart = os.time() end
             saveCfg()
         end
 
@@ -2468,11 +2468,10 @@ imgui.OnFrame(
         local cy2 = WP.y + sHdrH + pad
 
 
-        local st3    = farm.stats.start_time or 0
-        local el3    = (st3>0) and (os.time()-st3) or 0
+        local el3    = getBotElapsed()
         local timeS3 = string.format('%02d:%02d:%02d',
             math.floor(el3/3600), math.floor((el3%3600)/60), el3%60)
-        local sesLbl = u8'\xd1\xe5\xf1\xf1\xe8\xff: '..timeS3
+        local sesLbl = u8'\xd0\xe0\xe1\xee\xf2\xe0 \xe1\xee\xf2\xe0: '..timeS3
         DL:AddText(imgui.ImVec2(WP.x+pad, cy2), u32(CLR.textDim), sesLbl)
         cy2 = cy2 + imgui.CalcTextSize(sesLbl).y + 10*MDS
 
@@ -2964,10 +2963,14 @@ function main()
     end)
 
     lua_thread.create(function()
+        local lastTgReport = os.time()
         while true do
-            wait(20*60*1000)
-            if farm.running and tg.enabled and tg.chat_id~='' then
-                sendStatsReport('\xc0\xe2\xf2\xee-\xee\xf2\xf7\xb8\xf2 20 \xec\xe8\xed')
+            wait(30000)
+            if farm.running and tg.enabled and tg.chat_id ~= '' then
+                if os.time() - lastTgReport >= 20 * 60 then
+                    lastTgReport = os.time()
+                    sendStatsReport('\xc0\xe2\xf2\xee-\xee\xf2\xf7\xb8\xf2 20 \xec\xe8\xed')
+                end
             end
         end
     end)
@@ -2988,14 +2991,14 @@ function main()
                 if not licenseOK then
                     licWinOpen[0] = true
                 else
-                    farm.running=true
-                    if farm.stats.start_time==0 then farm.stats.start_time=os.time() end
-                    botTimerStart = os.time()
+                    farm.running    = true
+                    botTimerStart   = os.time()
+                    botSessionStart = os.time()
                     antiAdminEnableTime = os.clock()
-                    movement.active=false
-                    sprintActive=false
+                    movement.active = false
+                    sprintActive    = false
                     setGameKeyState(1,0); stopSprint()
-                    watchdogLastTarget=os.clock()
+                    watchdogLastTarget = os.clock()
                     sampAddChatMessage('{4488ff}[StrandFerma]: {44ff44}\xd1\xd2\xc0\xd0\xd2',-1)
                 end
             end
@@ -3210,16 +3213,15 @@ function main()
                                     runToPoint(b.x, b.y, b.z)
                                     movement.active = false
                                     farm.target = nil
-
-                                    if not patrolStop and math.random(10) == 1 then
-                                        local pauseEnd = os.clock() + math.random(2, 3)
-                                        while os.clock() < pauseEnd and farm.running and not patrolStop and not pause_bot do
-                                            wait(100)
-                                        end
-                                    end
-
                                     if patrolStop then break end
                                 end
+                                if not patrolStop and math.random(5) == 1 then
+                                    local pauseEnd = os.clock() + math.random(2, 3)
+                                    while os.clock() < pauseEnd and farm.running and not patrolStop and not pause_bot do
+                                        wait(100)
+                                    end
+                                end
+                                if patrolStop then break end
                             end
 
                             patrolIdx = patrolIdx + 1
