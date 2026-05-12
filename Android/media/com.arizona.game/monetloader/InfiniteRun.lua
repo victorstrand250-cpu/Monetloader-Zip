@@ -25,11 +25,12 @@ function main()
 
     msg(u8'Çàãðóæåí! /infrun — âêë/âûêë áåñêîíå÷íûé áåã')
 
-    while true do
+    while true do wait(0)
         if enabled then
             setPlayerNeverGetsTired(PLAYER_HANDLE, true)
+        else
+            setPlayerNeverGetsTired(PLAYER_HANDLE, false)
         end
-        wait(200)
     end
 end
 
